@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta charset="utf-8">
+    <title>Imagine-App Challenge</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="">
+    <meta name="author" content="">
+
+    <!-- Le styles -->
+    <!--<link href="./static/css/bootstrap.css" rel="stylesheet"> -->
+    <link href="../static/static/css/bootstrap.css" rel="stylesheet">
+    <style>
+      body {
+	padding-top: 60px; /* 60px to make the container go all the way to the bottom of the topbar */
+	<!-- background-image: url(static/img/home_bkg.jpg); -->
+	background-repeat: repeat;
+      }
+    </style>
+    <link href="../static/static/css/bootstrap-responsive.css" rel="stylesheet">
+
+    <link rel="shortcut icon" href="http://twitter.github.com/bootstrap/static/ico/favicon.ico">
+    <link rel="apple-touch-icon-precomposed" sizes="144x144" href="http://twitter.github.com/bootstrap/static/ico/apple-touch-icon-144-precomposed.png">
+    <link rel="apple-touch-icon-precomposed" sizes="114x114" href="http://twitter.github.com/bootstrap/static/ico/apple-touch-icon-114-precomposed.png">
+    <link rel="apple-touch-icon-precomposed" sizes="72x72" href="http://twitter.github.com/bootstrap/static/ico/apple-touch-icon-72-precomposed.png">
+    <link rel="apple-touch-icon-precomposed" href="http://twitter.github.com/bootstrap/static/ico/apple-touch-icon-57-precomposed.png">
+  </head>
+  <body>
+
+    <div class="navbar navbar-fixed-top">
+      <div class="navbar-inner">
+        <div class="container-fluid">
+          <a class="brand" href="#">MyHome - Imagine App Challenge</a>
+          <div class="buttonbtn-group pull-right">
+            <a class="btn dropdown-toggle" data-toggle="dropdown" href="./welcome.html"><i class="icon-user"></i>Hi, CableShow!<span class="caret"></span></a>
+          </div>
+	</div>
+      </div>
+      <!-- <div class="nav-collapse"> -->
+      <!-- 	<div class="navbar-inner"> -->
+      <!-- 	  <ul class="nav"> -->
+      <!--       <li><a href="#">Control</a></li> -->
+      <!--       <li><a href="#">Stats</a></li> -->
+      <!--       <li><a href="#">Topology</a></li> -->
+      <!-- 	  </ul> -->
+      <!-- 	</div> -->
+      <!-- </div> -->
+    </div>
+
+    <div class="container">
+      
+      <div class="page-header" align="center">
+    	<h3>My Home Network</h3>
+	<p>&nbsp;</p>
+      </div>    
+      <div class="row">
+		<!-- <div class="span8">
+          <div class="hero-unit-min-padding" style="height:200px" align="center" id="TOPO">
+			</div>
+        </div> -->
+		<div id=TOPO width=1080 height=245 align="center">
+          </div>
+      </div>
+
+
+      <div class="page-header">
+	<!--<p>&nbsp;</p>-->
+      </div>    
+      <div class="row">
+        <div class="span6">
+          <div class="hero-unit-min-padding" style="height:300px" align="center">
+            <p class="modal-header" style="font-size:20px">Control</p>
+	    <form class="form-horizontal" name="voip_form" onSubmit="return SetVoipService()" action="#">
+              <fieldset>
+		<div class="control-group">
+		  <label class="control-label" for="select01">VoIP</label>
+		  <div class="controls">
+		    <select id="skype">
+		      <option class="badge badge-warning" id="skype_default">Default</option>
+                      <option class="badge badge-success" id="skype_low">Low-Latency (e.g. VoIP)</option>
+		      <option class="badge badge-info" id="skpe_high">High Bandwidth (e.g. Video)</option>
+		    </select>
+		  </div>
+		</div>
+		<div class="control-group">
+		  <label class="control-label" for="select01">EnergyManagement</label>
+		  <div class="controls">
+		    <select id="energy">
+		      <option class="badge badge-warning" id="skype_default">Default</option>
+                      <option class="badge badge-success" id="skype_low">Low-Latency (e.g. VoIP)</option>
+		      <option class="badge badge-info" id="skpe_high">High Bandwidth (e.g. Video)</option>
+		    </select>
+		  </div>
+		</div>
+		<div class="control-group">
+		  <label class="control-label" for="select01">Video-A</label>
+		  <div class="controls">
+		    <select id="video">
+		      <option class="badge badge-warning" id="skype_default">Default</option>
+                      <option class="badge badge-success" id="skype_low">Low-Latency (e.g. VoIP)</option>
+		      <option class="badge badge-info" id="skpe_high">High Bandwidth (e.g. Video)</option>
+		    </select>
+		  </div>
+		</div>
+		<div class="form-actions">
+		  <button type="submit" class="btn btn-primary">Save changes</button>
+		</div>
+	      </fieldset>
+	    </form>
+          </div>
+
+	<p>&nbsp;</p>
+      </div>    
+      <!-- <div class="row"> -->
+        <div class="span6" id="STATS">
+          <div class="hero-unit-min-padding" style="height:300px" align="center">
+            <p class="modal-header" style="font-size:20px">Stats</p>
+	    <br/>
+	    <span class="label label-warning label-stats" >Default                </span> <span class="label label-stats" id="default_stats">00000.00 MB</span><br/><br/><br/>
+	    <span class="label label-success label-stats" >Low-Latency      </span> <span class="label label-stats" id="voip_stats">00000.00 MB</span><br/><br/><br/>
+	    <span class="label label-info label-stats" >High-Bandwidth</span> <span class="label label-stats" id="video_stats">00000.00 MB</span><br/><br/><br/>
+
+	    <!-- <span class="label label-warning" style="white-space:pre;font-size:23px">Default                </span> <span class="label" id="default_stats">0</span><br/> -->
+	    <!-- <span class="label label-success" style="font-size:23px;white-space:pre">Low-Latency      </span> <span class="label" id="voip_stats">0</span><br/> -->
+	    <!-- <span class="label label-info" style="white-space:pre;font-size:23px">High Bandwidth</span> <span class="label" id="video_stats">0</span> -->
+          </div>
+
+        </div>
+      </div>
+      <SCRIPT TYPE="text/javascript">
+	function SetVoipService()
+	{
+	var skype_service = document.voip_form.skype.value;
+	if (skype_service == "Low-Latency (e.g. VoIP)"){
+	var req = new XMLHttpRequest();
+	req.open("GET", "http://50.201.10.56:8000/_myboost/index.html?ip_dst=50.201.10.60&service=voip&state=1", false);
+	req.send(null);	
+	document.getElementById("skype_low").selected=true
+	}
+	else if (skype_service == "Default"){
+	var req = new XMLHttpRequest();
+	req.open("GET", "http://50.201.10.56:8000/_myboost/index.html?ip_dst=50.201.10.60&service=voip&state=0", false);
+	req.send(null);	
+	}
+	else if (skype_service == "High Bandwidth (e.g. Video)"){
+	var req = new XMLHttpRequest();
+	req.open("GET", "http://50.201.10.56:8000/_myboost/index.html?ip_dst=50.201.10.60&service=video&state=1", false);
+	req.send(null);	
+	}
+
+	<!-- if (voip_service == "Low-Latency (e.g. VoIP)"){ -->
+	<!-- var req = new XMLHttpRequest(); -->
+	<!-- req.open("GET", "http://50.201.10.56:8000/_myboost/index.html?ip=50.201.10.60&service=voip&state=1", false); -->
+	<!-- req.send(null);	 -->
+	<!-- } -->
+	<!-- else if (voip_service == "Default"){ -->
+	<!-- var req = new XMLHttpRequest(); -->
+	<!-- req.open("GET", "http://50.201.10.56:8000/_myboost/index.html?ip=50.201.10.60&service=voip&state=0", false); -->
+	<!-- // req.send(null);	 -->
+	<!-- } -->
+	<!-- else if (voip_service == "High Bandwidth (e.g. Video)"){ -->
+	<!-- var req = new XMLHttpRequest(); -->
+	<!-- req.open("GET", "http://50.201.10.56:8000/_myboost/index.html?ip=50.201.10.60&service=video&state=1", false); -->
+	<!-- // req.send(null);	 -->
+	<!-- } -->
+	}
+      </SCRIPT>
+	
+	
+
+    <!-- Le javascript
+    ================================================== -->
+    <!-- Placed at the end of the document so the pages load faster -->
+    <script src="../static/static/js/jquery.js"></script>
+    <script src="../static/static/js/bootstrap-transition.js"></script>
+    <script src="../static/static/js/bootstrap-alert.js"></script>
+    <script src="../static/static/js/bootstrap-modal.js"></script>
+    <script src="../static/static/js/bootstrap-dropdown.js"></script>
+    <script src="../static/static/js/bootstrap-scrollspy.js"></script>
+    <script src="../static/static/js/bootstrap-tab.js"></script>
+    <script src="../static/static/js/bootstrap-tooltip.js"></script>
+    <script src="../static/static/js/bootstrap-popover.js"></script>
+    <script src="../static/static/js/bootstrap-button.js"></script>
+    <script src="../static/static/js/bootstrap-collapse.js"></script>
+    <script src="../static/static/js/bootstrap-carousel.js"></script>
+    <script src="../static/static/js/bootstrap-typeahead.js"></script>
+    <script type="text/javascript" src="../static/static/js/jquery.tipsy.js"></script>
+    <script type="text/javascript" src="../static/static/js/stats.js"></script>
+    <link href="../static/static/css/tipsy.css" rel="stylesheet" type="text/css" />
+    <script type="text/javascript">
+      start_stats_demo("stats.json", "#STATS");
+    </script>
+	<script type="text/javascript" src="../static/static/js/d3.v2.min.js"></script>
+	<script type="text/javascript" src="../static/static/js/topo.js"></script>
+	<script type="text/javascript">
+		start_demo("topo.json", "#TOPO");
+	</script>
+
+
+</body></html>
