@@ -249,6 +249,62 @@ class WifiAuthenticator(object):
     def _handle_AssocRequest(self, event):
         log.debug("Got an assoc request event from %s!!" % dpid_to_str(event.dpid))
 
+        rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
+        
+        ssid, bssid = self.get_ssid_for_host(event.src_addr)
+        log.debug("%s, %s" % (ssid, bssid))
+        dst = [int(x,16) for x in [event.src_addr[0:2], event.src_addr[2:4], event.src_addr[4:6],
+                                   event.src_addr[6:8], event.src_addr[8:10], event.src_addr[10:]]]
+        log.debug(dst)
+        log.debug(event.src_addr)
+
+
+        # Frame Control
+        frameCtrl = dot11.Dot11(FCS_at_end = False)
+        frameCtrl.set_version(0)
+        frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_ASSOCIATION_RESPONSE)
+        # Frame Control Flags
+        frameCtrl.set_fromDS(0)
+        frameCtrl.set_toDS(0)
+        frameCtrl.set_moreFrag(0)
+        frameCtrl.set_retry(0)
+        frameCtrl.set_powerManagement(0)
+        frameCtrl.set_moreData(0)
+        frameCtrl.set_protectedFrame(0)
+        frameCtrl.set_order(0)
+ 
+        # Management Frame
+        sequence = random.randint(0, 4096)
+        mngtFrame = dot11.Dot11ManagementFrame()
+        mngtFrame.set_duration(0)
+        mngtFrame.set_destination_address(dst)
+        mngtFrame.set_source_address(bssid)
+        mngtFrame.set_bssid(bssid)
+        mngtFrame.set_fragment_number(0)
+        mngtFrame.set_sequence_number(sequence)
+ 
+        # Assoc Response Frame
+        assocFrame = dot11.Dot11ManagementAssociationResponse()
+        assocFrame.set_capabilities(0x0401)
+        assocFrame.set_status_code(0)
+        assocFrame.set_association_id(1)
+        assocFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x18, 0x30, 0x48])
+        assocFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x12\x24\x60\x6c")
+
+ 
+        mngtFrame.contains(assocFrame)
+        frameCtrl.contains(mngtFrame)
+ 
+        resp_str = frameCtrl.get_packet()
+        log.debug("length of pkt : %d" % len(resp_str))
+
+        packet_str = RADIOTAP_STR + resp_str
+
+        self.aps[event.dpid].send_packet_out(packet_str)
+
+
+
+
 def launch( transparent=False):
     core.registerNew(WifiAuthenticator, str_to_bool(transparent))
             
