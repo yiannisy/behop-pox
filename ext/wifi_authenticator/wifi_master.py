@@ -95,8 +95,6 @@ class WifiAuthenticateSwitch(EventMixin):
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_BEACON):
             return
 
-        print binascii.hexlify(packet.raw[rd_len:rd_len+8])
-
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_PROBE_REQ):
             self.raiseEvent(ProbeRequest(event.dpid, binascii.hexlify(ie.mgmt.src), 0))
 
@@ -107,8 +105,8 @@ class WifiAuthenticateSwitch(EventMixin):
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_ASSOC_REQ):
             self.raiseEvent(AssocRequest(event.dpid, binascii.hexlify(ie.mgmt.src), 0))
 
-        if (ie.type == 0 and ie.subtype != 8):
-            print "Received %x from %s" % (ie.subtype, binascii.hexlify(ie.mgmt.src))
+        #if (ie.type == 0 and ie.subtype != 8):
+        #    print "Received %x from %s" % (ie.subtype, binascii.hexlify(ie.mgmt.src))
        
 
     def send_packet_out(self, msg_raw):
@@ -197,6 +195,56 @@ class WifiAuthenticator(object):
 
     def _handle_AuthRequest(self, event):
         log.debug("Got an auth request event from %s!!" % dpid_to_str(event.dpid))
+        rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
+        
+        ssid, bssid = self.get_ssid_for_host(event.src_addr)
+        log.debug("%s, %s" % (ssid, bssid))
+        dst = [int(x,16) for x in [event.src_addr[0:2], event.src_addr[2:4], event.src_addr[4:6],
+                                   event.src_addr[6:8], event.src_addr[8:10], event.src_addr[10:]]]
+        log.debug(dst)
+        log.debug(event.src_addr)
+
+
+        # Frame Control
+        frameCtrl = dot11.Dot11(FCS_at_end = False)
+        frameCtrl.set_version(0)
+        frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_AUTHENTICATION)
+        # Frame Control Flags
+        frameCtrl.set_fromDS(0)
+        frameCtrl.set_toDS(0)
+        frameCtrl.set_moreFrag(0)
+        frameCtrl.set_retry(0)
+        frameCtrl.set_powerManagement(0)
+        frameCtrl.set_moreData(0)
+        frameCtrl.set_protectedFrame(0)
+        frameCtrl.set_order(0)
+ 
+        # Management Frame
+        sequence = random.randint(0, 4096)
+        mngtFrame = dot11.Dot11ManagementFrame()
+        mngtFrame.set_duration(0)
+        mngtFrame.set_destination_address(dst)
+        mngtFrame.set_source_address(bssid)
+        mngtFrame.set_bssid(bssid)
+        mngtFrame.set_fragment_number(0)
+        mngtFrame.set_sequence_number(sequence)
+ 
+        # Auth Reply Frame
+        authFrame = dot11.Dot11ManagementAuthentication()
+        authFrame.set_authentication_algorithm(0)
+        authFrame.set_authentication_sequence(2)
+        authFrame.set_authentication_status(0)
+ 
+        mngtFrame.contains(authFrame)
+        frameCtrl.contains(mngtFrame)
+ 
+        resp_str = frameCtrl.get_packet()
+        log.debug("length of pkt : %d" % len(resp_str))
+
+        packet_str = RADIOTAP_STR + resp_str
+
+        self.aps[event.dpid].send_packet_out(packet_str)
+
 
     def _handle_AssocRequest(self, event):
         log.debug("Got an assoc request event from %s!!" % dpid_to_str(event.dpid))
