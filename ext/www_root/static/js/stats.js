@@ -12,11 +12,11 @@ function setTipsy(tag) {
 
 function update(json) {
     var default_stats = document.getElementById("default_stats");
-    var voip_stats = document.getElementById("voip_stats");
+    //var voip_stats = document.getElementById("voip_stats");
     var video_stats = document.getElementById("video_stats");
 
     default_stats.innerHTML = json.default_stats;
-    voip_stats.innerHTML = json.voip_stats;
+    //voip_stats.innerHTML = json.voip_stats;
     video_stats.innerHTML = json.video_stats;
 }
 
