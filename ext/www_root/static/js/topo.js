@@ -460,11 +460,11 @@ function image(d){
 		}else if(d.name == "ap"){
 			return "../static/static/img/ap.jpg";
 		}else if(d.name == "client"){
-			return "../static/static/img/mac.jpg";
+			return "../static/static/img/netflix.jpg";
 		}else if(d.name == "cloud"){
 			return "../static/static/img/cloud.jpg";
 		}else if(d.name == "phone"){
-			return "../static/static/img/phone.jpg";
+			return "../static/static/img/dropbox.jpg";
 		}
 	}else{
 		return "../static/static/img/blank.jpg";

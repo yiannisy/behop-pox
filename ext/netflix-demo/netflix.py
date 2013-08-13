@@ -87,11 +87,15 @@ class DumpSwitch(EventMixin):
       self._set_simple_flow(2,1,priority=2,ip='192.168.12.23')
 
     elif event.state == '1' and event.service == 'wireless':
-      #self._set_boosted_flow(2,1,ip='192.168.12.24',queue_id=6,reverse=True)
-      #self._set_boosted_flow(2,1,ip='192.168.12.23',queue_id=1,reverse=True)
+      self._set_boosted_flow(2,1,ip='192.168.12.23',queue_id=6,reverse=True)
+      self._set_boosted_flow(2,1,ip='192.168.12.24',queue_id=1,reverse=True)
       print "setting up wireless service"
     elif event.state == '0' and event.service == 'wireless':
       print "tearing down wireless service"
+      self._del_boosted_flow(2,1,ip='192.168.12.23',queue_id=0,priority=8,reverse=True)
+      self._del_boosted_flow(2,1,ip='192.168.12.24',queue_id=0,priority=8,reverse=True)
+      self._set_simple_flow(2,1,priority=2,ip='192.168.12.23')
+      self._set_simple_flow(2,1,priority=2,ip='192.168.12.24')
     else:
       print "unknown service"
 
