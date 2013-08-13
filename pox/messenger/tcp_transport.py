@@ -77,7 +77,7 @@ class TCPConnection (Connection, Task):
     Task.__init__(self)
 
     #self.start()
-    self._send_welcome()
+    #self._send_welcome()
 
   def _close (self):
     super(TCPConnection, self)._close()
@@ -121,6 +121,8 @@ import pox.core
 
 def launch (tcp_address = "0.0.0.0", tcp_port = 7790):
   def start ():
+    log.debug("nexus came!")
+    print("nexus came!")
     t = TCPTransport(tcp_address, tcp_port)
     t.start()
   core.call_when_ready(start, "MessengerNexus", __name__)
