@@ -14,11 +14,13 @@ import impacket.dot11 as dot11
 from pox.lib.revent import *
 from wifi_helper import *
 
+from dpkt import NeedData
+
 import hashlib
 
 log = core.getLogger()
 
-WIFI_MONITOR_PORT = 1 # monitor port where we expect mgmt packets from.
+WIFI_MONITOR_PORT = 2 # monitor port where we expect mgmt packets from.
 
 RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x02\x6c\x09\xa0\x00\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
 PROBE_RESPONSE_STR = '\x50\x00\x3a\x01\xc8\x3a\x35\xcf\xcc\x37\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x01\xc0\x37\xb0\xdb\x28\x05\x00\x00\x00\x00\x64\x00\x01\x04\x00\x06\x70\x69\x2d\x61\x70\x31\x01\x08\x82\x84\x8b\x96\x0c\x12\x18\x24\x03\x01\x01\x2a\x01\x06\x32\x04\x30\x48\x60\x6c\xdd\x18\x00\x50\xf2\x02\x01\x01\x00\x00\x03\xa4\x00\x00\x27\xa4\x00\x00\x42\x43\x5e\x00\x62\x32\x2f\x00' #\x28\xf3\xe0\x3a'
@@ -69,10 +71,16 @@ class AssocRequest(Event):
         self.snr = snr
         self.params = params
 
-
+class AddStation(Event):
+    def __init__(self, dpid, src_addr, vbssid, params):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.src_addr = src_addr
+        self.vbssid = vbssid
+        self.params = params
 
 class WifiAuthenticateSwitch(EventMixin):
-    _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest])
+    _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, AddStation])
     
     def __init__(self, connection, transparent):
         EventMixin.__init__(self)
@@ -88,11 +96,15 @@ class WifiAuthenticateSwitch(EventMixin):
         packet = event.parsed
         rdtap = dpkt.radiotap.Radiotap(packet.raw)
         rd_len = rdtap.length >> 8
-        if rdtap.version != 0 or rd_len != 18:
+        if rdtap.version != 0 or rd_len != 34: # or 18 on the pi's...
             #print "unrecognized rdtap header - ignore... (%d, %d)" % (rdtap.version, rd_len)
             return
 
-        ie = dpkt.ieee80211.IEEE80211(packet.raw[rd_len:])
+        try:
+            ie = dpkt.ieee80211.IEEE80211(packet.raw[rd_len:])
+        except NeedData:
+            #log.debug("Cannot debug packet...")
+            return
 
         #log.debug("received packet %x %x from %s" % (ie.type, ie.subtype, binascii.hexlify(ie.mgmt.src)))
         
@@ -121,8 +133,11 @@ class WifiAuthenticateSwitch(EventMixin):
         self.connection.send(msg)
 
 
-class WifiAuthenticator(object):
+class WifiAuthenticator(EventMixin):
+    _eventMixin_events = set([AddStation])
+
     def __init__(self, transparent):
+        EventMixin.__init__(self)
         core.openflow.addListeners(self)
         self.transparent = transparent
         self.aps = {}
@@ -133,9 +148,10 @@ class WifiAuthenticator(object):
         _hash = hashlib.md5()
         _hash.update(src_addr)
         digest = _hash.hexdigest()
-        bssid = [0x00, 0x26,0xE1,int(digest[-1:],16), int(digest[-3:-2],16), int(digest[-5:-4],16)]
+        vbssid = [0x00, 0x26,0xE1,int(digest[-1:],16), int(digest[-3:-2],16), int(digest[-5:-4],16)]
+        vbssid = "0000000000f1"
         ssid = "malakas"
-        return ssid,bssid
+        return ssid,vbssid
 
     def _handle_ConnectionUp(self, event):
         log.debug("Connection %s" % (event.connection))
@@ -147,12 +163,16 @@ class WifiAuthenticator(object):
         #log.debug("Got a probe request event from %s!!" % dpid_to_str(event.dpid))
         rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
         
-        ssid, bssid = self.get_ssid_for_host(event.src_addr)
+        ssid, vbssid = self.get_ssid_for_host(event.src_addr)
         if event.src_addr != "c83a35cfcc37":
             return
-        log.debug("Probe Response for %s : SSID:%s, BSSID:%s" % (event.src_addr,ssid, bssid))
+
         dst = [int(x,16) for x in [event.src_addr[0:2], event.src_addr[2:4], event.src_addr[4:6],
                                    event.src_addr[6:8], event.src_addr[8:10], event.src_addr[10:]]]
+        bssid = [int(x,16) for x in [vbssid[0:2], vbssid[2:4], vbssid[4:6],
+                                   vbssid[6:8], vbssid[8:10], vbssid[10:]]]
+        log.debug("Probe Response for %s : SSID:%s, BSSID:%s" % (event.src_addr,ssid, bssid))
+
         #log.debug(dst)
         #log.debug(event.src_addr)
 
@@ -204,10 +224,14 @@ class WifiAuthenticator(object):
         log.debug("Got an auth request event from %s!!" % dpid_to_str(event.dpid))
         rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
         
-        ssid, bssid = self.get_ssid_for_host(event.src_addr)
+        ssid, vbssid = self.get_ssid_for_host(event.src_addr)
         #log.debug("%s, %s" % (ssid, bssid))
         dst = [int(x,16) for x in [event.src_addr[0:2], event.src_addr[2:4], event.src_addr[4:6],
                                    event.src_addr[6:8], event.src_addr[8:10], event.src_addr[10:]]]
+        bssid = [int(x,16) for x in [vbssid[0:2], vbssid[2:4], vbssid[4:6],
+                                   vbssid[6:8], vbssid[8:10], vbssid[10:]]]
+
+
         #log.debug(dst)
         #log.debug(event.src_addr)
 
@@ -303,10 +327,13 @@ class WifiAuthenticator(object):
 
         rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
         
-        ssid, bssid = self.get_ssid_for_host(event.src_addr)
+        ssid,vbssid = self.get_ssid_for_host(event.src_addr)
         #log.debug("%s, %s" % (ssid, bssid))
         dst = [int(x,16) for x in [event.src_addr[0:2], event.src_addr[2:4], event.src_addr[4:6],
                                    event.src_addr[6:8], event.src_addr[8:10], event.src_addr[10:]]]
+        bssid = [int(x,16) for x in [vbssid[0:2], vbssid[2:4], vbssid[4:6],
+                                   vbssid[6:8], vbssid[8:10], vbssid[10:]]]
+
         #log.debug(dst)
         #log.debug(event.src_addr)
         print event.params
@@ -354,8 +381,7 @@ class WifiAuthenticator(object):
 
         self.aps[event.dpid].send_packet_out(packet_str)
 
-
-
+        self.raiseEvent(AddStation(event.dpid, event.src_addr, vbssid, event.params))
 
 def launch( transparent=False):
     core.registerNew(WifiAuthenticator, str_to_bool(transparent))
