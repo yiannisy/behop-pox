@@ -18,7 +18,7 @@ from dpkt import NeedData
 
 import hashlib
 
-log = core.getLogger()
+log = core.getLogger("WifiMaster")
 
 WIFI_MONITOR_PORT = 2 # monitor port where we expect mgmt packets from.
 
@@ -50,24 +50,28 @@ class AuthRequest(Event):
     '''Event raised by an AP when a probe request is received.
     @dpid : the AP reporting the request
     @src_addr : host's address
+    @bssid : the bssid for the authentication
     @snr: the snr of the packet
     '''
-    def __init__(self, dpid, src_addr, snr):
+    def __init__(self, dpid, src_addr, bssid, snr):
         Event.__init__(self)
         self.dpid = dpid
         self.src_addr = src_addr
+        self.bssid = bssid
         self.snr = snr
 
 class AssocRequest(Event):
     '''Event raised by an AP when a probe request is received.
     @dpid : the AP reporting the request
     @src_addr : host's address
+    @bssid : the bssid for the assocation
     @snr: the snr of the packet
     '''
-    def __init__(self, dpid, src_addr, snr, params):
+    def __init__(self, dpid, src_addr, bssid, snr, params):
         Event.__init__(self)
         self.dpid = dpid
         self.src_addr = src_addr
+        self.bssid = bssid
         self.snr = snr
         self.params = params
 
@@ -88,6 +92,17 @@ class WifiAuthenticateSwitch(EventMixin):
         self.transparent = transparent
         
         connection.addListeners(self)
+        self._set_simple_flow(1,3)
+        self._set_simple_flow(3,1)
+                              
+
+    def _set_simple_flow(self,port_in,port_out, priority=1,ip=None, queue_id=None):
+        msg = of.ofp_flow_mod()
+        msg.idle_timeout=0
+        msg.priority = priority
+        msg.match.in_port = port_in
+        msg.actions.append(of.ofp_action_output(port = port_out))
+        self.connection.send(msg)
 
     def _handle_PacketIn(self, event):
         if event.port != WIFI_MONITOR_PORT:
@@ -115,12 +130,14 @@ class WifiAuthenticateSwitch(EventMixin):
             self.raiseEvent(ProbeRequest(event.dpid, binascii.hexlify(ie.mgmt.src), 0))
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_AUTH):
-            self.raiseEvent(AuthRequest(event.dpid, binascii.hexlify(ie.mgmt.src), 0))
+            if is_homenets_bssid(binascii.hexlify(ie.mgmt.bssid)):
+                self.raiseEvent(AuthRequest(event.dpid, binascii.hexlify(ie.mgmt.src), binascii.hexlify(ie.mgmt.bssid), 0))
             #self.send_packet_out(AUTH_REPLY_STR)
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_ASSOC_REQ):
-            params = WifiStaParams(packet.raw)
-            self.raiseEvent(AssocRequest(event.dpid, binascii.hexlify(ie.mgmt.src), 0, params))
+            if is_homenets_bssid(binascii.hexlify(ie.mgmt.bssid)):
+                params = WifiStaParams(packet.raw)
+                self.raiseEvent(AssocRequest(event.dpid, binascii.hexlify(ie.mgmt.src), binascii.hexlify(ie.mgmt.src), 0, params))
 
         #if (ie.type == 0 and ie.subtype != 8):
         #    print "Received %x from %s" % (ie.subtype, binascii.hexlify(ie.mgmt.src))
@@ -149,7 +166,7 @@ class WifiAuthenticator(EventMixin):
         _hash.update(src_addr)
         digest = _hash.hexdigest()
         vbssid = [0x00, 0x26,0xE1,int(digest[-1:],16), int(digest[-3:-2],16), int(digest[-5:-4],16)]
-        vbssid = "0000000000f1"
+        vbssid = "020000000001"
         ssid = "malakas"
         return ssid,vbssid
 
@@ -164,8 +181,8 @@ class WifiAuthenticator(EventMixin):
         rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
         
         ssid, vbssid = self.get_ssid_for_host(event.src_addr)
-        if event.src_addr != "c83a35cfcc37":
-            return
+        #if event.src_addr != "c83a35cfcc37" and event.src_addr != "00215c53c6e9":
+        #    return
 
         dst = [int(x,16) for x in [event.src_addr[0:2], event.src_addr[2:4], event.src_addr[4:6],
                                    event.src_addr[6:8], event.src_addr[8:10], event.src_addr[10:]]]
@@ -220,7 +237,7 @@ class WifiAuthenticator(EventMixin):
         self.aps[event.dpid].send_packet_out(packet_str)
 
 
-    def _handle_AuthRequest(self, event):
+    def _handle_AuthRequest(self, event):        
         log.debug("Got an auth request event from %s!!" % dpid_to_str(event.dpid))
         rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
         
@@ -336,7 +353,6 @@ class WifiAuthenticator(EventMixin):
 
         #log.debug(dst)
         #log.debug(event.src_addr)
-        print event.params
 
         # Frame Control
         frameCtrl = dot11.Dot11(FCS_at_end = False)
@@ -379,8 +395,9 @@ class WifiAuthenticator(EventMixin):
 
         packet_str = RADIOTAP_STR + resp_str
 
+        log.info("Sending Association Response to %s" % (event.src_addr))
         self.aps[event.dpid].send_packet_out(packet_str)
-
+        log.info("Adding %s to AP %s with VBSSID %s" % (event.src_addr, event.dpid, vbssid))
         self.raiseEvent(AddStation(event.dpid, event.src_addr, vbssid, event.params))
 
 def launch( transparent=False):

@@ -2,6 +2,8 @@ import impacket.dot11 as dot11
 import binascii
 import struct
 
+HOMENETS_OUI = "020000" # needs to be better defined.
+
 class WifiStaParams(object):
     def __init__(self, buf=None):
         rdtap = dot11.RadioTap(aBuffer=buf)
@@ -22,3 +24,7 @@ class WifiStaParams(object):
 
     def __str__(self):
         return "src : %s" % binascii.hexlify(self.addr)
+
+
+def is_homenets_bssid(bssid):
+    return  bssid.startswith(HOMENETS_OUI)
