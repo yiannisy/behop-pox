@@ -72,7 +72,7 @@
           <div class="hero-unit-min-padding" style="height:300px" align="center">
             <p class="modal-header" style="font-size:20px">Control</p>
 	    
-	    <img src="/static/static/img/lm-full.jpg" id="lm-img" class="img-rounded" onClick="return ClickLastMileService()" action="#">
+	    <img src="/static/static/img/lm-full.jpg" id="lm-img" title="Last-mile Control" class="img-rounded" onClick="return ClickLastMileService()" action="#">
 	    <img src="/static/static/img/wireless-full.png" id="wireless-img" class="img-rounded" onClick="return ClickWirelessService()" action="#">
 
 	    <!-- <form class="form-horizontal" name="voip_form" onSubmit="return SetVoipService()" action="#"> -->
@@ -138,7 +138,7 @@
 	{
 	console.log(document.getElementById("lm-img").src);
 	if (document.getElementById("lm-img").src.indexOf("lm-full") != -1){
-	document.getElementById("lm-img").src="/static/static/img/lm-free.png";
+	document.getElementById("lm-img").src="/static/static/img/lm-free.jpg";
 	var req = new XMLHttpRequest();
 	req.open("GET", "http://localhost:8000/_myboost/index.html?ip_dst=50.201.10.60&service=lastmile&state=1", false);
 	req.send(null);
