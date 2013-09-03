@@ -40,7 +40,7 @@ class OvsDBBot(ChannelBot, EventMixin):
                 dpid = int(msg["result"][0]["rows"][0]["datapath_id"],16)
                 self.connections[dpid] = event.con
                 log.debug("Appending OVSDB connection for %x" % dpid)
-            except KeyError:
+            except (KeyError, TypeError) as e:
                 pass
 
     def send_echo_reply(self, con, msg):
