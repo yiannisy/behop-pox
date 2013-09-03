@@ -20,7 +20,7 @@ import hashlib
 
 log = core.getLogger("WifiMaster")
 
-WIFI_MONITOR_PORT = 1 # monitor port where we expect mgmt packets from.
+WIFI_MONITOR_PORT = 2 # monitor port where we expect mgmt packets from.
 
 RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x02\x6c\x09\xa0\x00\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
 PROBE_RESPONSE_STR = '\x50\x00\x3a\x01\xc8\x3a\x35\xcf\xcc\x37\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x01\xc0\x37\xb0\xdb\x28\x05\x00\x00\x00\x00\x64\x00\x01\x04\x00\x06\x70\x69\x2d\x61\x70\x31\x01\x08\x82\x84\x8b\x96\x0c\x12\x18\x24\x03\x01\x01\x2a\x01\x06\x32\x04\x30\x48\x60\x6c\xdd\x18\x00\x50\xf2\x02\x01\x01\x00\x00\x03\xa4\x00\x00\x27\xa4\x00\x00\x42\x43\x5e\x00\x62\x32\x2f\x00' #\x28\xf3\xe0\x3a'
@@ -92,15 +92,23 @@ class WifiAuthenticateSwitch(EventMixin):
         self.transparent = transparent
         
         connection.addListeners(self)
-        #self._set_simple_flow(1,3)
-        #self._set_simple_flow(3,1)
+        self._set_simple_flow(1,3)
+        self._set_simple_flow(3,1)
+        self._set_simple_flow(3,of.OFPP_NORMAL,priority=2,ip_dst='192.168.11.21')
+        self._set_simple_flow(of.OFPP_LOCAL,of.OFPP_NORMAL, priority=2,ip_src='192.168.11.21')
                               
 
-    def _set_simple_flow(self,port_in,port_out, priority=1,ip=None, queue_id=None):
+    def _set_simple_flow(self,port_in,port_out, priority=1,ip_src=None, ip_dst=None,queue_id=None):
         msg = of.ofp_flow_mod()
         msg.idle_timeout=0
         msg.priority = priority
         msg.match.in_port = port_in
+        if (ip_dst or ip_src):
+            msg.match.dl_type = 0x0800
+            if (ip_dst):
+                msg.match.nw_dst = ip_dst
+            if (ip_src):
+                msg.match_nw_src = ip_src
         msg.actions.append(of.ofp_action_output(port = port_out))
         self.connection.send(msg)
 
