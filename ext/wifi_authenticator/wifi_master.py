@@ -166,17 +166,30 @@ class WifiAuthenticator(EventMixin):
         core.openflow.addListeners(self)
         self.transparent = transparent
         self.aps = {}
+        self.vbssid_base = 0x020000000000
+        self.vbssid_backup = 0x060000000000
+        self.vbssid_pool = [self.vbssid_base | (1 << i) for i in range(0,40)]
+        self.vbssid_map = {}
 
     def get_ssid_for_host(self, src_addr):
-        # for bssid use the first 3 bytes for the OpenFlow OUI,
-        # and the last 3 from the last 3 bytes of the src address MD5 digest.
-        _hash = hashlib.md5()
-        _hash.update(src_addr)
-        digest = _hash.hexdigest()
-        vbssid = [0x00, 0x26,0xE1,int(digest[-1:],16), int(digest[-3:-2],16), int(digest[-5:-4],16)]
-        vbssid = "020000000001"
+        #check if this node has already a vbssid assigned.
+        #if not, pick-up the first one from the pool and assign it to this host.
+        #make sure to return the vbssid to the pool when the node leaves/disassociates.
+        #As this needs to happen early (probe-request/response) we should free-up the
+        #nodes that don't follow-up with auth/assoc request.
+        if self.vbssid_map.has_key(src_addr):
+            vbssid = self.vbssid_map[src_addr]
+        else:
+            if(len(self.vbssid_pool) > 0):
+                vbssid = self.vbssid_pool[0]
+                self.vbssid_map[src_addr] = vbssid
+                del self.vbssid_pool[0]
+            else:
+                log.warn("Running out of VBSSID - giving backup vbssid for node %s" % src_addr)
+                vbssid = self.vbssid_backup
+        s_vbssid = "%012x" % vbssid
         ssid = "malakas"
-        return ssid,vbssid
+        return ssid,s_vbssid
 
     def _handle_ConnectionUp(self, event):
         log.debug("Connection %s" % (event.connection))
@@ -344,7 +357,8 @@ class WifiAuthenticator(EventMixin):
         packet_str = RADIOTAP_STR + resp_str
 
         self.aps[event.dpid].send_packet_out(packet_str)
-
+        log.info("Adding %s to AP %s with VBSSID %s" % (event.src_addr, event.dpid, vbssid))
+        self.raiseEvent(AddStation(event.dpid, event.src_addr, vbssid, event.params))
 
 
     def _handle_AssocRequest(self, event):
