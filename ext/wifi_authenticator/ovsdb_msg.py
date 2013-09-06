@@ -14,6 +14,8 @@ GET_DPID = {"method":"transact", "params":["Open_vSwitch", {"op":"select","table
 
 ADD_STATION = {"method":"transact","params":["Open_vSwitch",{"op":"insert","table":"WifiSta","row":{"addr":None,"vbssid":None}}],"id":1}
 
+DEL_STATION = {"method":"transact","params":["Open_vSwitch",{"op":"delete","table":"WifiSta","where":[]}],"id":2}
+
 class OvsDBBot(ChannelBot, EventMixin):
     def __init__(self, channel, nexus = None, weak = False, extra = {}):
         ChannelBot.__init__(self, channel, nexus, weak, extra)
@@ -40,6 +42,8 @@ class OvsDBBot(ChannelBot, EventMixin):
                 dpid = int(msg["result"][0]["rows"][0]["datapath_id"],16)
                 self.connections[dpid] = event.con
                 log.debug("Appending OVSDB connection for %x" % dpid)
+                log.debug("Removing existing stations")
+                event.con.send(DEL_STATION)
             except (KeyError, TypeError) as e:
                 pass
 
