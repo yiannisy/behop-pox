@@ -57,8 +57,10 @@ class OvsDBBot(ChannelBot, EventMixin):
         log.debug("Received add station event")
         log.debug(event)
         add_json = ADD_STATION.copy()
-        add_json["params"][1]["row"] = {"addr":event.src_addr, "vbssid": event.vbssid}
-        log.debug("Adding Station %s to %d" % (event.src_addr, event.dpid))
+        _addr = "%012x" % event.src_addr
+        _vbssid = "%012x" % event.vbssid
+        add_json["params"][1]["row"] = {"addr":_addr, "vbssid": _vbssid}
+        log.debug("Adding Station %s to %d" % (_addr, event.dpid))
         if self.connections.has_key(event.dpid):
             con = self.connections[event.dpid]
             con.send(add_json)

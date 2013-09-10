@@ -6,6 +6,16 @@ from pox.core import core
 HOMENETS_OUI = "020000" # needs to be better defined.
 log = core.getLogger("WifiMaster")
 
+def mac_to_array(mac):
+    s_mac = mac
+    if (not isinstance(mac, str)):
+        s_mac = "%012x" % mac
+    a_mac = [int(x,16) for x in [s_mac[0:2], s_mac[2:4], s_mac[4:6],
+                                 s_mac[6:8], s_mac[8:10], s_mac[10:]]]
+    return a_mac
+
+    
+
 class WifiStaParams(object):
     def __init__(self, buf=None):
         rdtap = dot11.RadioTap(aBuffer=buf)

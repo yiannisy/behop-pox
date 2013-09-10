@@ -8,6 +8,7 @@ from pox.lib.util import dpid_to_str
 from pox.lib.util import str_to_bool
 import time
 import random
+from pox.lib.recoco import Timer
 
 import dpkt, binascii
 import impacket.dot11 as dot11
@@ -22,6 +23,7 @@ log = core.getLogger("WifiMaster")
 
 WIFI_MONITOR_PORT = 2 # monitor port where we expect mgmt packets from.
 SERVING_SSID = 'malakas'
+ASSOC_TIMEOUT = 5
 
 
 RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x02\x6c\x09\xa0\x00\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
@@ -91,6 +93,7 @@ class Station(object):
         self.addr = addr # mac address of station
         self.dpid = None # dpid to which the station is assigned.
         self.vbssid = None # assigned vbssid        
+        self.last_seen = time.time()
         self.state = 'SNIFF'
 
 class WifiAuthenticateSwitch(EventMixin):
@@ -146,15 +149,15 @@ class WifiAuthenticateSwitch(EventMixin):
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_PROBE_REQ):
             #log.debug("%s -> %s (%s)" % (binascii.hexlify(ie.mgmt.src), ie.ssid, ie.ssid.data))
-            self.raiseEvent(ProbeRequest(event.dpid, binascii.hexlify(ie.mgmt.src), 0, ie.ssid.data))
+            self.raiseEvent(ProbeRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), 0, ie.ssid.data))
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_AUTH):
-            self.raiseEvent(AuthRequest(event.dpid, binascii.hexlify(ie.mgmt.src), binascii.hexlify(ie.mgmt.bssid), 0))
+            self.raiseEvent(AuthRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), 0))
             #self.send_packet_out(AUTH_REPLY_STR)
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_ASSOC_REQ):
             params = WifiStaParams(packet.raw)
-            self.raiseEvent(AssocRequest(event.dpid, binascii.hexlify(ie.mgmt.src), binascii.hexlify(ie.mgmt.bssid), 0, params))
+            self.raiseEvent(AssocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), 0, params))
 
         #if (ie.type == 0 and ie.subtype != 8):
         #    print "Received %x from %s" % (ie.subtype, binascii.hexlify(ie.mgmt.src))
@@ -181,7 +184,24 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.vbssid_pool = [self.vbssid_base | (1 << i) for i in range(0,40)]
         self.vbssid_map = {}
         self.stations = {}
+        self.timer = None
+        self.set_timer()
 
+    def set_timer(self):
+        if self.timer : self.timer.cancel()
+        self.timer = Timer(1, self.check_timeout_events, recurring=True)
+
+    def check_timeout_events(self):
+        log.debug("Remaining VBSSIDs : %d" % len(self.vbssid_pool))
+        now = time.time()
+        for sta in self.stations.values():
+            if now - sta.last_seen > ASSOC_TIMEOUT and sta.state != "ASSOC":
+                if self.vbssid_map.has_key(sta.addr):
+                    del self.vbssid_map[sta.addr]
+                    self.vbssid_pool.append(sta.vbssid)
+                del self.stations[sta.addr]
+        
+        
     def is_valid_probe_request(self, event):
         #log.debug("Got request for SSID %s" % event.ssid)
         return ((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None))
@@ -209,8 +229,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             else:
                 log.warn("Running out of VBSSID - giving backup vbssid for node %s" % src_addr)
                 vbssid = self.vbssid_backup
-        s_vbssid = "%012x" % vbssid
-        return s_vbssid
+        return vbssid
 
     def _handle_ConnectionUp(self, event):
         log.debug("Connection %s" % (event.connection))
@@ -231,6 +250,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         # this needs more sophistication : we could sniff on irrelevant probe-reqs
         # or we might have to decide between multiple dpids...
         if self.is_valid_probe_request(event):
+            sta.last_seen = time.time()
             sta.state = self.processFSM(sta.state,'ProbeReq', event)
 
     def _handle_AuthRequest(self, event):        
@@ -242,6 +262,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             sta = self.stations[event.src_addr]
 
         if self.is_valid_auth_request(event, sta):
+            sta.last_seen = time.time()
             sta.state = self.processFSM(sta.state, 'AuthReq', event)
 
     def _handle_AssocRequest(self, event):
@@ -253,6 +274,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             sta = self.stations[event.src_addr]
 
         if self.is_valid_assoc_request(event, sta):
+            sta.last_seen = time.time()
             sta.state = self.processFSM(sta.state, 'AssocReq', event)
         else:
             log.debug("invalid assoc request")
@@ -271,7 +293,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         vbssid = self.stations[addr].vbssid
         self.sendAssocResponse(event)
         log.debug("Sending Assoc Response to %s" % addr)
-        log.info("Adding %s to AP %s with VBSSID %s" % (event.src_addr, event.dpid, vbssid))
+        log.info("Adding %s to AP %s with VBSSID %x" % (event.src_addr, event.dpid, vbssid))
         self.raiseEvent(AddStation(event.dpid, event.src_addr, vbssid, event.params))
                 
     def sendProbeResponse(self, event):
@@ -283,10 +305,10 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         #if event.src_addr != "c83a35cfcc37" and event.src_addr != "00215c53c6e9":
         #    return
 
-        dst = [int(x,16) for x in [event.src_addr[0:2], event.src_addr[2:4], event.src_addr[4:6],
-                                   event.src_addr[6:8], event.src_addr[8:10], event.src_addr[10:]]]
-        bssid = [int(x,16) for x in [vbssid[0:2], vbssid[2:4], vbssid[4:6],
-                                   vbssid[6:8], vbssid[8:10], vbssid[10:]]]
+        #dst = [int(x,16) for x in [event.src_addr[0:2], event.src_addr[2:4], event.src_addr[4:6],
+        #                           event.src_addr[6:8], event.src_addr[8:10], event.src_addr[10:]]]
+        dst = mac_to_array(event.src_addr)
+        bssid = mac_to_array(vbssid)
 
         # Frame Control
         frameCtrl = dot11.Dot11(FCS_at_end = False)
@@ -338,11 +360,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
         
         #log.debug("%s, %s" % (ssid, bssid))
-        dst = [int(x,16) for x in [event.src_addr[0:2], event.src_addr[2:4], event.src_addr[4:6],
-                                   event.src_addr[6:8], event.src_addr[8:10], event.src_addr[10:]]]
-        bssid = [int(x,16) for x in [vbssid[0:2], vbssid[2:4], vbssid[4:6],
-                                   vbssid[6:8], vbssid[8:10], vbssid[10:]]]
-
+        dst = mac_to_array(event.src_addr)
+        bssid = mac_to_array(vbssid)
 
         #log.debug(dst)
         #log.debug(event.src_addr)
@@ -440,10 +459,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
         
         #log.debug("%s, %s" % (ssid, bssid))
-        dst = [int(x,16) for x in [event.src_addr[0:2], event.src_addr[2:4], event.src_addr[4:6],
-                                   event.src_addr[6:8], event.src_addr[8:10], event.src_addr[10:]]]
-        bssid = [int(x,16) for x in [vbssid[0:2], vbssid[2:4], vbssid[4:6],
-                                   vbssid[6:8], vbssid[8:10], vbssid[10:]]]
+        dst = mac_to_array(event.src_addr)
+        bssid = mac_to_array(vbssid)
 
         #log.debug(dst)
         #log.debug(event.src_addr)
