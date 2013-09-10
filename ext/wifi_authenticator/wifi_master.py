@@ -306,9 +306,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         log.debug("Received Request to move station %x from %x to %x" % (event.addr, event.old_dpid,
                                                                          event.new_dpid))
         # Check that the node is currently associated to an AP.
-        if event.addr not in self.stations.keys() or \\
-                self.stations[event.addr].state != 'ASSOC' or \\
-                self.stations[event.addr].dpid  != event.old_dpid:                
+        if event.addr not in self.stations.keys() or self.stations[event.addr].state != 'ASSOC' or self.stations[event.addr].dpid  != event.old_dpid:                
             log.debug("Only associated nodes can move...")
 
         # else we can move the station across the two APs.
