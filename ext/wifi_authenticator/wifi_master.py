@@ -90,6 +90,19 @@ class AddStation(Event):
         self.vbssid = vbssid
         self.params = params
 
+class RemoveStation(Event):
+    def __init__(self, dpid, src_addr):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.src_addr = src_addr
+
+class MoveStation(Event):
+    def __init__(self, addr, old_dpid, new_dpid):
+        Event.__init__(self)
+        self.addr = addr
+        self.old_dpid = old_dpid
+        self.new_dpid = new_dpid
+
 class Station(object):
     def __init__(self, addr):
         self.addr = addr # mac address of station
@@ -99,7 +112,7 @@ class Station(object):
         self.state = 'SNIFF'
 
 class WifiAuthenticateSwitch(EventMixin):
-    _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, AddStation])
+    _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, AddStation, RemoveStation])
     
     def __init__(self, connection, transparent):
         EventMixin.__init__(self)
@@ -288,6 +301,25 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         else:
             log.debug("invalid assoc request")
 
+    def _handle_MoveStation(self, event):
+        '''Moving a station from one AP to another.'''        
+        log.debug("Received Request to move station %x from %x to %x" % (event.addr, event.old_dpid,
+                                                                         event.new_dpid))
+        # Check that the node is currently associated to an AP.
+        if event.addr not in self.stations.keys() or \\
+                self.stations[event.addr].state != 'ASSOC' or \\
+                self.stations[event.addr].dpid  != event.old_dpid:                
+            log.debug("Only associated nodes can move...")
+
+        # else we can move the station across the two APs.
+        sta = self.stations[event.addr]
+        params = {}
+        self.raiseEvent(RemoveStation(event.old_dpid, sta.addr))
+        self.raiseEvent(AddStation(event.new_dpid, sta.addr, sta.vbssid, params))
+        sta.dpid = event.new_dpid
+                       
+
+        
 
     def sniff_to_reserve(self, event):
         addr = event.src_addr

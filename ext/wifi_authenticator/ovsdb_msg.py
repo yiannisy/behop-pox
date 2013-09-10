@@ -69,6 +69,22 @@ class OvsDBBot(ChannelBot, EventMixin):
             log.debug("key not found...")
             for key in self.connections.keys():
                 log.debug("DPID : %x" % key)
+
+    def _handle_RemoveStation(self, event):
+        log.debug("Received remove station event")
+        log.debug(event)
+        rem_json = DEL_STATION.copy()
+        _addr = "%012x" % event.src_addr
+        rem_json["params"][1]["where"] = [["addr","==",_addr]]
+        log.debug("Removing Station %x from AP %x" % (event.src_addr, event.dpid))
+        if self.connections.has_key(event.dpid):
+            con = self.connections[event.dpid]
+            con.send(rem_json)
+            log.debug(rem_json)
+        else:
+            log.debug("key not found...")
+            for key in self.connections.keys():
+                log.debug("DPID : %x" % key)
         
 class OvsDBManager(object):
     def __init__(self):
