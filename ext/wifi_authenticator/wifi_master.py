@@ -21,7 +21,9 @@ import hashlib
 
 log = core.getLogger("WifiMaster")
 
-WIFI_MONITOR_PORT = 2 # monitor port where we expect mgmt packets from.
+WAN_PORT  = 1 # ethernet port
+MON_PORT  = 2 # monitor port where we expect mgmt packets from.
+WLAN_PORT = 3 # wireless port
 SERVING_SSID = 'malakas'
 ASSOC_TIMEOUT = 5
 
@@ -103,12 +105,19 @@ class WifiAuthenticateSwitch(EventMixin):
         EventMixin.__init__(self)
         self.connection = connection
         self.transparent = transparent
+
         
         connection.addListeners(self)
-        self._set_simple_flow(1,3)
-        self._set_simple_flow(3,1)
-        self._set_simple_flow(3,of.OFPP_NORMAL,priority=2,ip_dst='192.168.11.21')
-        self._set_simple_flow(of.OFPP_LOCAL,of.OFPP_NORMAL, priority=2,ip_src='192.168.11.21')
+        # Setup default behavior
+        # Switch traffic between WAN <-> WLAN port
+        # Allow in-band connections to the AP from the WAN port
+        # This assumes that the connection is direct and there is no NAT/FlowVisor in between, as 
+        # we detect the AP's address through the OF connection.
+        # Monitor port goes directly to the controller...
+        self._set_simple_flow(WAN_PORT,WLAN_PORT)
+        self._set_simple_flow(WLAN_PORT,WAN_PORT)
+        self._set_simple_flow(WAN_PORT,of.OFPP_NORMAL,priority=2,ip_dst=connection.sock.getpeername()[0])
+        self._set_simple_flow(of.OFPP_LOCAL,of.OFPP_NORMAL, priority=2,ip_src=connection.sock.getpeername()[0])
                               
 
     def _set_simple_flow(self,port_in,port_out, priority=1,ip_src=None, ip_dst=None,queue_id=None):
@@ -126,7 +135,7 @@ class WifiAuthenticateSwitch(EventMixin):
         self.connection.send(msg)
 
     def _handle_PacketIn(self, event):
-        if event.port != WIFI_MONITOR_PORT:
+        if event.port != MON_PORT:
             return
 
         packet = event.parsed
@@ -165,7 +174,7 @@ class WifiAuthenticateSwitch(EventMixin):
 
     def send_packet_out(self, msg_raw):
         msg = of.ofp_packet_out(in_port=of.OFPP_NONE)
-        msg.actions.append(of.ofp_action_output(port = WIFI_MONITOR_PORT))
+        msg.actions.append(of.ofp_action_output(port = MON_PORT))
         msg.data = msg_raw
         self.connection.send(msg)
 
