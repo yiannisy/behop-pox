@@ -325,6 +325,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.stations[addr].vbssid = self.get_vbssid_for_host(addr)
         self.stations[addr].dpid = dpid
         self.sendProbeResponse(event)
+        self.raiseEvent(AddStation(event.dpid, event.src_addr, self.stations[addr].vbssid, {}))
         log.debug("Sending Probe Response to %x" % addr)
 
     def auth_to_assoc(self, event):
@@ -333,7 +334,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.sendAssocResponse(event)
         log.debug("Sending Assoc Response to %x" % addr)
         log.info("Adding %s to AP %s with VBSSID %x" % (event.src_addr, event.dpid, vbssid))
-        self.raiseEvent(AddStation(event.dpid, event.src_addr, vbssid, event.params))
+        #self.raiseEvent(AddStation(event.dpid, event.src_addr, vbssid, event.params))
                 
     def sendProbeResponse(self, event):
         vbssid = self.stations[event.src_addr].vbssid
