@@ -1,8 +1,11 @@
 import impacket.dot11 as dot11
+import dpkt
 import binascii
 import struct
+import random
 from pox.core import core
 
+RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x02\x6c\x09\xa0\x00\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
 HOMENETS_OUI = "020000" # needs to be better defined.
 log = core.getLogger("WifiMaster")
 
