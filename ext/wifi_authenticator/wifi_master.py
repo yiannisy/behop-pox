@@ -193,7 +193,7 @@ class WifiAuthenticateSwitch(EventMixin):
 
 
 class WifiAuthenticator(EventMixin, AssociationFSM):
-    _eventMixin_events = set([AddStation])
+    _eventMixin_events = set([AddStation, RemoveStation])
 
     def __init__(self, transparent):
         EventMixin.__init__(self)
@@ -219,6 +219,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         for sta in self.stations.values():
             if now - sta.last_seen > ASSOC_TIMEOUT and sta.state != "ASSOC":
                 if self.vbssid_map.has_key(sta.addr):
+                    self.raiseEvent(RemoveStation(sta.dpid, sta.addr))
                     del self.vbssid_map[sta.addr]
                     self.vbssid_pool.append(sta.vbssid)
                 del self.stations[sta.addr]
