@@ -14,7 +14,194 @@ def mac_to_array(mac):
                                  s_mac[6:8], s_mac[8:10], s_mac[10:]]]
     return a_mac
 
+def generate_probe_response(vbssid, ssid, dst_addr):
+    '''
+    Generates probe response for the given (vbssid, ssid, dst_addr) tuple.
+    '''
+    rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
+        
+    dst = mac_to_array(dst_addr)
+    bssid = mac_to_array(vbssid)
     
+    # Frame Control
+    frameCtrl = dot11.Dot11(FCS_at_end = False)
+    frameCtrl.set_version(0)
+    frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_PROBE_RESPONSE)
+    # Frame Control Flags
+    frameCtrl.set_fromDS(0)
+    frameCtrl.set_toDS(0)
+    frameCtrl.set_moreFrag(0)
+    frameCtrl.set_retry(0)
+    frameCtrl.set_powerManagement(0)
+    frameCtrl.set_moreData(0)
+    frameCtrl.set_protectedFrame(0)
+    frameCtrl.set_order(0)
+    
+    # Management Frame
+    sequence = random.randint(0, 4096)
+    mngtFrame = dot11.Dot11ManagementFrame()
+    mngtFrame.set_duration(0)
+    mngtFrame.set_destination_address(dst)
+    mngtFrame.set_source_address(bssid)
+    mngtFrame.set_bssid(bssid)
+    mngtFrame.set_fragment_number(0)
+    mngtFrame.set_sequence_number(sequence)
+    
+    # Beacon Frame
+    baconFrame = dot11.Dot11ManagementProbeResponse()
+    baconFrame.set_ssid(ssid)
+    baconFrame.set_capabilities(0x0401)
+    baconFrame.set_beacon_interval(0x0064)
+    baconFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x18, 0x30, 0x48])
+    baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x12\x24\x60\x6c")
+    
+    mngtFrame.contains(baconFrame)
+    frameCtrl.contains(mngtFrame)
+    
+    resp_str = frameCtrl.get_packet()
+    packet_str = RADIOTAP_STR + resp_str
+    return packet_str
+    
+def generate_auth_response(vbssid, dst_addr):
+    '''
+    Generates auth response for the given (vbssid,dst_addr) tuple.
+    '''
+    rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
+        
+    dst = mac_to_array(dst_addr)
+    bssid = mac_to_array(vbssid)
+    
+    # Frame Control
+    frameCtrl = dot11.Dot11(FCS_at_end = False)
+    frameCtrl.set_version(0)
+    frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_AUTHENTICATION)
+    # Frame Control Flags
+    frameCtrl.set_fromDS(0)
+    frameCtrl.set_toDS(0)
+    frameCtrl.set_moreFrag(0)
+    frameCtrl.set_retry(0)
+    frameCtrl.set_powerManagement(0)
+    frameCtrl.set_moreData(0)
+    frameCtrl.set_protectedFrame(0)
+    frameCtrl.set_order(0)
+    
+    # Management Frame
+    sequence = random.randint(0, 4096)
+    mngtFrame = dot11.Dot11ManagementFrame()
+    mngtFrame.set_duration(0)
+    mngtFrame.set_destination_address(dst)
+    mngtFrame.set_source_address(bssid)
+    mngtFrame.set_bssid(bssid)
+    mngtFrame.set_fragment_number(0)
+    mngtFrame.set_sequence_number(sequence)
+    
+    # Auth Reply Frame
+    authFrame = dot11.Dot11ManagementAuthentication()
+    authFrame.set_authentication_algorithm(0)
+    authFrame.set_authentication_sequence(2)
+    authFrame.set_authentication_status(0)
+    
+    mngtFrame.contains(authFrame)
+    frameCtrl.contains(mngtFrame)
+    
+    resp_str = frameCtrl.get_packet()
+    #log.debug("length of pkt : %d" % len(resp_str))
+    
+    packet_str = RADIOTAP_STR + resp_str
+    return packet_str
+
+def generate_assoc_response(vbssid, dst_addr):
+    '''
+    Generates assoc response for the given vbssid,dst_addr tuple.
+    '''
+    rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
+    
+    #log.debug("%s, %s" % (ssid, bssid))
+    dst = mac_to_array(dst_addr)
+    bssid = mac_to_array(vbssid)
+
+    # Frame Control
+    frameCtrl = dot11.Dot11(FCS_at_end = False)
+    frameCtrl.set_version(0)
+    frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_ASSOCIATION_RESPONSE)
+    # Frame Control Flags
+    frameCtrl.set_fromDS(0)
+    frameCtrl.set_toDS(0)
+    frameCtrl.set_moreFrag(0)
+    frameCtrl.set_retry(0)
+    frameCtrl.set_powerManagement(0)
+    frameCtrl.set_moreData(0)
+    frameCtrl.set_protectedFrame(0)
+    frameCtrl.set_order(0)
+    
+    # Management Frame
+    sequence = random.randint(0, 4096)
+    mngtFrame = dot11.Dot11ManagementFrame()
+    mngtFrame.set_duration(0)
+    mngtFrame.set_destination_address(dst)
+    mngtFrame.set_source_address(bssid)
+    mngtFrame.set_bssid(bssid)
+    mngtFrame.set_fragment_number(0)
+    mngtFrame.set_sequence_number(sequence)
+ 
+    # Assoc Response Frame
+    assocFrame = dot11.Dot11ManagementAssociationResponse()
+    assocFrame.set_capabilities(0x0401)
+    assocFrame.set_status_code(0)
+    assocFrame.set_association_id(0xc001)
+    assocFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x18, 0x30, 0x48])
+    assocFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x12\x24\x60\x6c")
+    
+    mngtFrame.contains(assocFrame)
+    frameCtrl.contains(mngtFrame)
+    
+    resp_str = frameCtrl.get_packet()
+    packet_str = RADIOTAP_STR + resp_str
+    return packet_str
+
+def generate_beacon(vbssid, ssid):
+    '''
+    Generates beacon for the given (vbssid, ssid) tuple.
+    '''
+    bssid = mac_to_array(vbssid)
+    # Frame Control
+    frameCtrl = dot11.Dot11(FCS_at_end = False)
+    frameCtrl.set_version(0)
+    frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_BEACON)
+    # Frame Control Flags
+    frameCtrl.set_fromDS(0)
+    frameCtrl.set_toDS(0)
+    frameCtrl.set_moreFrag(0)
+    frameCtrl.set_retry(0)
+    frameCtrl.set_powerManagement(0)
+    frameCtrl.set_moreData(0)
+    frameCtrl.set_protectedFrame(0)
+    frameCtrl.set_order(0)
+    
+    # Management Frame
+    sequence = random.randint(0, 4096)
+    mngtFrame = dot11.Dot11ManagementFrame()
+    mngtFrame.set_duration(0)
+    mngtFrame.set_destination_address([0xff,0xff,0xff,0xff,0xff,0xff])
+    mngtFrame.set_source_address(bssid)
+    mngtFrame.set_bssid(bssid)
+    mngtFrame.set_fragment_number(0)
+    mngtFrame.set_sequence_number(sequence)
+    
+    # Beacon Frame
+    baconFrame = dot11.Dot11ManagementProbeResponse()
+    baconFrame.set_ssid(ssid)
+    baconFrame.set_capabilities(0x0401)
+    baconFrame.set_beacon_interval(0x0064)
+    baconFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x18, 0x30, 0x48])
+    baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x12\x24\x60\x6c")
+ 
+    mngtFrame.contains(baconFrame)
+    frameCtrl.contains(mngtFrame)
+
+    resp_str = frameCtrl.get_packet()
+    packet_str = RADIOTAP_STR + resp_str
+    return packet_str
 
 class WifiStaParams(object):
     def __init__(self, buf=None):

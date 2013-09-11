@@ -193,9 +193,21 @@ class WifiAuthenticateSwitch(EventMixin):
 
 
 class WifiAuthenticator(EventMixin, AssociationFSM):
+    '''
+    This is the main class for WifiAuthentication. It keeps track of all APs
+    on a AP-map and spawns a WifiAuthenticateSwitch for each AP.
+    * Monitors raw 80211 management events and generates Probe/Auth/Assoc Responses
+    * Manages virtual-BSSID (vbssid)
+    * Decides where to place a station and sets appropriate state to the related AP.
+    * Talks to the Information Base (IB) and decides whether to move a station and where.
+    * Monitors stations, checks for timeouts, etc.
+    '''
     _eventMixin_events = set([AddStation, RemoveStation])
 
     def __init__(self, transparent):
+        '''
+        Setup vbssid map and placeholders for APs and stations.
+        '''
         EventMixin.__init__(self)
         AssociationFSM.__init__(self)
         core.openflow.addListeners(self)
@@ -210,38 +222,67 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.set_timer()
 
     def set_timer(self):
+        '''
+        Setup timer for stations timeout.
+        '''
         if self.timer : self.timer.cancel()
         self.timer = Timer(1, self.check_timeout_events, recurring=True)
 
+    def delete_station(self, sta):
+        '''
+        Deletes a station from the AP-map, removes state from the AP itself, 
+        and frees reserved vbssid.
+        '''
+        if self.vbssid_map.has_key(sta.addr):
+            # this might not work...
+            self.raiseEvent(RemoveStation(sta.dpid, sta.addr))
+            del self.vbssid_map[sta.addr]
+            self.vbssid_pool.append(sta.vbssid)
+        del self.stations[sta.addr]
+
     def check_timeout_events(self):
+        '''
+        Periodically checks if stations are alive and if not remove associated state.
+        As we have to soft-reserve VBSSID during probe-responses, this has to run frequently
+        to ensure that we don't run out of VBSSID soon.
+        @TODO : Check the state of the station and vbssid before removing.
+        @TODO : Probably generate related deauth/disassoc messages from here (?)
+        '''
         log.debug("Remaining VBSSIDs : %d" % len(self.vbssid_pool))
         now = time.time()
         for sta in self.stations.values():
             if now - sta.last_seen > ASSOC_TIMEOUT and sta.state != "ASSOC":
-                if self.vbssid_map.has_key(sta.addr):
-                    self.raiseEvent(RemoveStation(sta.dpid, sta.addr))
-                    del self.vbssid_map[sta.addr]
-                    self.vbssid_pool.append(sta.vbssid)
-                del self.stations[sta.addr]
+                self.delete_station(sta)
         
         
     def is_valid_probe_request(self, event):
+        '''
+        Checks if a sniffed association request is for us.
+        '''
         #log.debug("Got request for SSID %s" % event.ssid)
         return ((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None))
 
     def is_valid_auth_request(self, event, sta):
+        '''
+        Checks if a sniffed authentication request is for us and comes from the expected AP.
+        '''
         return ((event.bssid == sta.vbssid) and (event.dpid == sta.dpid))
         
     def is_valid_assoc_request(self, event, sta):
+        '''
+        Checks if a sniffed association request is for us and comes from the expected AP.
+        '''
         log.debug("%s %s %s %s" % (event.bssid, sta.vbssid, event.dpid, sta.dpid))
         return ((event.bssid == sta.vbssid) and (event.dpid == sta.dpid))
 
     def get_vbssid_for_host(self, src_addr):
-        #check if this node has already a vbssid assigned.
-        #if not, pick-up the first one from the pool and assign it to this host.
-        #make sure to return the vbssid to the pool when the node leaves/disassociates.
-        #As this needs to happen early (probe-request/response) we should free-up the
-        #nodes that don't follow-up with auth/assoc request.
+        '''
+        checks if this node has already a vbssid assigned.
+        if not, pick-up the first one from the pool and assign it to this host.
+        make sure to return the vbssid to the pool when the node leaves/disassociates.
+        As this needs to happen early (probe-request/response) we should free-up the
+        nodes that don't follow-up with auth/assoc request.
+        '''
         if self.vbssid_map.has_key(src_addr):
             vbssid = self.vbssid_map[src_addr]
         else:
@@ -255,20 +296,56 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         return vbssid
 
     def _handle_ConnectionUp(self, event):
+        '''
+        Setup a Wifi AP for each new connection.
+        '''
         log.debug("Connection %s" % (event.connection))
         wifi_ap = WifiAuthenticateSwitch(event.connection, self.transparent)
         wifi_ap.addListeners(self)
         self.aps[event.dpid] = wifi_ap
 
+    def _handle_ConnectionDown(self, event):
+        '''
+        Remove stations associated with this switch.
+        '''
+        log.debug("Connection terminated : %s" % (event.connection))
+        log.debug("Removing AP state and associated stations...")
+        for sta in self.stations.values():
+            if sta.dpid == event.dpid:
+                self.delete_station(sta)
+        del self.aps[event.dpid]
+        
     def _handle_ProbeRequest(self, event):
-        #log.debug("Got a probe request event from %s!!" % dpid_to_str(event.dpid))
+        '''
+        ProbeRequest can include several things, such as : 
+        - monitoring a client, 
+        - deciding whether to serve a client or not,
+        - reserving a vbssid (or use an existing one) for this client
+        - decide which channel to serve the user from
+        - decide which AP to serve the client from
 
-        if event.src_addr in self.stations.keys():
-            sta = self.stations[event.src_addr]
-        else:
+        Upon receiving a probe request from an unknown client we add it 
+        to our station list in SNIFF state.
+        
+        We then need to decide if we reply to it and if so from which AP.
+        For now the rule is simple : we reply only when the request is valid (ie. to
+        SERVING_BSSID or broadcast), and we make sure that there is a single running AP :)
+        A few strategies would be :
+        - Assign the client to the AP that first reported a ProbeReq, and do all the association process
+        through it.
+        - Assign the client to the first AP above an SNR threshold, and have a way to fallback 
+        in case the good threshold cannot be met.
+        - Wait to hear a few ProbeReqs from this guy, and select which AP to use
+        - Include channel selection on the previous.
+
+        If we decide to process the request, we update the last_seen timer and pass the input
+        to the Association FSM for this station ( more details on that at the sniff_to_reserve transition ).
+        '''
+        if event.src_addr not in self.stations.keys():
             self.stations[event.src_addr] = Station(event.src_addr)
-            sta = self.stations[event.src_addr]
 
+        sta = self.stations[event.src_addr]
+            
         # check if this is a valid probe-req to process.
         # this needs more sophistication : we could sniff on irrelevant probe-reqs
         # or we might have to decide between multiple dpids...
@@ -276,7 +353,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             sta.last_seen = time.time()
             sta.state = self.processFSM(sta.state,'ProbeReq', event)
 
-    def _handle_AuthRequest(self, event):        
+    def _handle_AuthRequest(self, event):
         log.info("Got an auth request from %x!!" % event.src_addr)
         if event.src_addr in self.stations.keys():
             sta = self.stations[event.src_addr]
@@ -317,10 +394,13 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.raiseEvent(AddStation(event.new_dpid, sta.addr, sta.vbssid, params))
         sta.dpid = event.new_dpid
                        
-
-        
-
     def sniff_to_reserve(self, event):
+        '''
+        When we are about to handle the first probe request from a station we move the station
+        to the RESERVE state. This means that we already reserved a vbssid for it and we have 
+        decided on which AP to client the client from. We update this information on our stations map
+        and set the respective set at the AP.
+        '''
         addr = event.src_addr
         dpid = event.dpid
         self.stations[addr].vbssid = self.get_vbssid_for_host(addr)
@@ -330,6 +410,9 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         log.debug("Sending Probe Response to %x" % addr)
 
     def auth_to_assoc(self, event):
+        '''
+        Plain association response for now.
+        '''
         addr = event.src_addr
         vbssid = self.stations[addr].vbssid
         self.sendAssocResponse(event)
@@ -340,214 +423,24 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
     def sendProbeResponse(self, event):
         vbssid = self.stations[event.src_addr].vbssid
         ssid = SERVING_SSID
-
-        rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
-        
-        #if event.src_addr != "c83a35cfcc37" and event.src_addr != "00215c53c6e9":
-        #    return
-
-        #dst = [int(x,16) for x in [event.src_addr[0:2], event.src_addr[2:4], event.src_addr[4:6],
-        #                           event.src_addr[6:8], event.src_addr[8:10], event.src_addr[10:]]]
-        dst = mac_to_array(event.src_addr)
-        bssid = mac_to_array(vbssid)
-
-        # Frame Control
-        frameCtrl = dot11.Dot11(FCS_at_end = False)
-        frameCtrl.set_version(0)
-        frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_PROBE_RESPONSE)
-        # Frame Control Flags
-        frameCtrl.set_fromDS(0)
-        frameCtrl.set_toDS(0)
-        frameCtrl.set_moreFrag(0)
-        frameCtrl.set_retry(0)
-        frameCtrl.set_powerManagement(0)
-        frameCtrl.set_moreData(0)
-        frameCtrl.set_protectedFrame(0)
-        frameCtrl.set_order(0)
- 
-        # Management Frame
-        sequence = random.randint(0, 4096)
-        mngtFrame = dot11.Dot11ManagementFrame()
-        mngtFrame.set_duration(0)
-        mngtFrame.set_destination_address(dst)
-        mngtFrame.set_source_address(bssid)
-        mngtFrame.set_bssid(bssid)
-        mngtFrame.set_fragment_number(0)
-        mngtFrame.set_sequence_number(sequence)
- 
-        # Beacon Frame
-        baconFrame = dot11.Dot11ManagementProbeResponse()
-        baconFrame.set_ssid(ssid)
-        baconFrame.set_capabilities(0x0401)
-        baconFrame.set_beacon_interval(0x0064)
-        baconFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x18, 0x30, 0x48])
-        baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x12\x24\x60\x6c")
- 
-        mngtFrame.contains(baconFrame)
-        frameCtrl.contains(mngtFrame)
- 
-        resp_str = frameCtrl.get_packet()
-        #log.debug("length of pkt : %d" % len(resp_str))
-
-        packet_str = RADIOTAP_STR + resp_str
-
-        self.aps[event.dpid].send_packet_out(packet_str)
-
+        pkt_str = generate_probe_response(vbssid, ssid, event.src_addr)
+        self.aps[event.dpid].send_packet_out(pkt_str)
 
     def sendAuthResponse(self, event):
         vbssid = self.stations[event.src_addr].vbssid
         ssid = SERVING_SSID
 
-        rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
-        
-        #log.debug("%s, %s" % (ssid, bssid))
-        dst = mac_to_array(event.src_addr)
-        bssid = mac_to_array(vbssid)
-
-        #log.debug(dst)
-        #log.debug(event.src_addr)
-
-
-        # Frame Control
-        frameCtrl = dot11.Dot11(FCS_at_end = False)
-        frameCtrl.set_version(0)
-        frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_AUTHENTICATION)
-        # Frame Control Flags
-        frameCtrl.set_fromDS(0)
-        frameCtrl.set_toDS(0)
-        frameCtrl.set_moreFrag(0)
-        frameCtrl.set_retry(0)
-        frameCtrl.set_powerManagement(0)
-        frameCtrl.set_moreData(0)
-        frameCtrl.set_protectedFrame(0)
-        frameCtrl.set_order(0)
- 
-        # Management Frame
-        sequence = random.randint(0, 4096)
-        mngtFrame = dot11.Dot11ManagementFrame()
-        mngtFrame.set_duration(0)
-        mngtFrame.set_destination_address(dst)
-        mngtFrame.set_source_address(bssid)
-        mngtFrame.set_bssid(bssid)
-        mngtFrame.set_fragment_number(0)
-        mngtFrame.set_sequence_number(sequence)
- 
-        # Auth Reply Frame
-        authFrame = dot11.Dot11ManagementAuthentication()
-        authFrame.set_authentication_algorithm(0)
-        authFrame.set_authentication_sequence(2)
-        authFrame.set_authentication_status(0)
- 
-        mngtFrame.contains(authFrame)
-        frameCtrl.contains(mngtFrame)
- 
-        resp_str = frameCtrl.get_packet()
-        #log.debug("length of pkt : %d" % len(resp_str))
-
-        packet_str = RADIOTAP_STR + resp_str
-
+        packet_str = generate_auth_response(vbssid, event.src_addr)
         self.aps[event.dpid].send_packet_out(packet_str)
 
         # Some drivers also wait to hear a beacon before they move from authentication to association...
-        # this shouldn't happen here...
-        # Frame Control
-        frameCtrl = dot11.Dot11(FCS_at_end = False)
-        frameCtrl.set_version(0)
-        frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_BEACON)
-        # Frame Control Flags
-        frameCtrl.set_fromDS(0)
-        frameCtrl.set_toDS(0)
-        frameCtrl.set_moreFrag(0)
-        frameCtrl.set_retry(0)
-        frameCtrl.set_powerManagement(0)
-        frameCtrl.set_moreData(0)
-        frameCtrl.set_protectedFrame(0)
-        frameCtrl.set_order(0)
- 
-        # Management Frame
-        sequence = random.randint(0, 4096)
-        mngtFrame = dot11.Dot11ManagementFrame()
-        mngtFrame.set_duration(0)
-        mngtFrame.set_destination_address([0xff,0xff,0xff,0xff,0xff,0xff])
-        mngtFrame.set_source_address(bssid)
-        mngtFrame.set_bssid(bssid)
-        mngtFrame.set_fragment_number(0)
-        mngtFrame.set_sequence_number(sequence)
- 
-        # Beacon Frame
-        baconFrame = dot11.Dot11ManagementProbeResponse()
-        baconFrame.set_ssid(ssid)
-        baconFrame.set_capabilities(0x0401)
-        baconFrame.set_beacon_interval(0x0064)
-        baconFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x18, 0x30, 0x48])
-        baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x12\x24\x60\x6c")
- 
-        mngtFrame.contains(baconFrame)
-        frameCtrl.contains(mngtFrame)
-
-        resp_str = frameCtrl.get_packet()
-        #log.debug("length of pkt : %d" % len(resp_str))
-
-        packet_str = RADIOTAP_STR + resp_str
-
+        # this shouldn't happen here... 
+        packet_str = generate_beacon(vbssid, ssid)
         self.aps[event.dpid].send_packet_out(packet_str)
-
 
     def sendAssocResponse(self, event):
         vbssid = self.stations[event.src_addr].vbssid
-        ssid = SERVING_SSID
-
-        rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
-        
-        #log.debug("%s, %s" % (ssid, bssid))
-        dst = mac_to_array(event.src_addr)
-        bssid = mac_to_array(vbssid)
-
-        #log.debug(dst)
-        #log.debug(event.src_addr)
-
-        # Frame Control
-        frameCtrl = dot11.Dot11(FCS_at_end = False)
-        frameCtrl.set_version(0)
-        frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_ASSOCIATION_RESPONSE)
-        # Frame Control Flags
-        frameCtrl.set_fromDS(0)
-        frameCtrl.set_toDS(0)
-        frameCtrl.set_moreFrag(0)
-        frameCtrl.set_retry(0)
-        frameCtrl.set_powerManagement(0)
-        frameCtrl.set_moreData(0)
-        frameCtrl.set_protectedFrame(0)
-        frameCtrl.set_order(0)
- 
-        # Management Frame
-        sequence = random.randint(0, 4096)
-        mngtFrame = dot11.Dot11ManagementFrame()
-        mngtFrame.set_duration(0)
-        mngtFrame.set_destination_address(dst)
-        mngtFrame.set_source_address(bssid)
-        mngtFrame.set_bssid(bssid)
-        mngtFrame.set_fragment_number(0)
-        mngtFrame.set_sequence_number(sequence)
- 
-        # Assoc Response Frame
-        assocFrame = dot11.Dot11ManagementAssociationResponse()
-        assocFrame.set_capabilities(0x0401)
-        assocFrame.set_status_code(0)
-        assocFrame.set_association_id(0xc001)
-        assocFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x18, 0x30, 0x48])
-        assocFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x12\x24\x60\x6c")
-
- 
-        mngtFrame.contains(assocFrame)
-        frameCtrl.contains(mngtFrame)
- 
-        resp_str = frameCtrl.get_packet()
-        #log.debug("length of pkt : %d" % len(resp_str))
-
-        packet_str = RADIOTAP_STR + resp_str
-
-        log.info("Sending Association Response to %x" % (event.src_addr))
+        packet_str = generate_assoc_response(vbssid, event.src_addr)
         self.aps[event.dpid].send_packet_out(packet_str)
 
 def launch( transparent=False):
