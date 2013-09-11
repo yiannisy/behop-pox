@@ -263,7 +263,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             sta.state = self.processFSM(sta.state,'ProbeReq', event)
 
     def _handle_AuthRequest(self, event):        
-        log.info("Got an auth request event from %s!!" % dpid_to_str(event.dpid))
+        log.info("Got an auth request from %x!!" % event.src_addr)
         if event.src_addr in self.stations.keys():
             sta = self.stations[event.src_addr]
         else:
@@ -275,7 +275,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             sta.state = self.processFSM(sta.state, 'AuthReq', event)
 
     def _handle_AssocRequest(self, event):
-        #log.info("Got an assoc request event from %s!!" % dpid_to_str(event.dpid))
+        log.info("Got an assoc request event from %x!!" % event.src_addr)
         if event.src_addr in self.stations.keys():
             sta = self.stations[event.src_addr]
         else:
@@ -295,13 +295,13 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.stations[addr].vbssid = self.get_vbssid_for_host(addr)
         self.stations[addr].dpid = dpid
         self.sendProbeResponse(event)
-        log.debug("Sending Probe Response to %s" % addr)
+        log.debug("Sending Probe Response to %x" % addr)
 
     def auth_to_assoc(self, event):
         addr = event.src_addr
         vbssid = self.stations[addr].vbssid
         self.sendAssocResponse(event)
-        log.debug("Sending Assoc Response to %s" % addr)
+        log.debug("Sending Assoc Response to %x" % addr)
         log.info("Adding %s to AP %s with VBSSID %x" % (event.src_addr, event.dpid, vbssid))
         self.raiseEvent(AddStation(event.dpid, event.src_addr, vbssid, event.params))
                 
@@ -515,7 +515,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
 
         packet_str = RADIOTAP_STR + resp_str
 
-        log.info("Sending Association Response to %s" % (event.src_addr))
+        log.info("Sending Association Response to %x" % (event.src_addr))
         self.aps[event.dpid].send_packet_out(packet_str)
 
 def launch( transparent=False):
