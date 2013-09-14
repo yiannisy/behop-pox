@@ -234,6 +234,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         @TODO : Probably generate related deauth/disassoc messages from here (?)
         '''
         log.debug("Remaining VBSSIDs : %d" % len(self.vbssid_pool))
+        log.debug("Currently Connected APs : %s" % [dpid_to_str(mac) for mac in self.aps])
         now = time.time()
         for sta in self.stations.values():
             if now - sta.last_seen > ASSOC_TIMEOUT and sta.state != "ASSOC":
