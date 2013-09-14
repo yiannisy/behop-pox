@@ -26,6 +26,7 @@ SERVING_SSID = 'malakas'
 ASSOC_TIMEOUT = 5
 VBSSID_RANGE_MIN = 20
 VBSSID_RANGE_MAX = 40
+USE_BLACKLIST = 1
 
 class ProbeRequest(Event):
     '''Event raised by an AP when a probe request is received.
@@ -101,10 +102,11 @@ class Station(object):
 class WifiAuthenticateSwitch(EventMixin):
     _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, AddStation, RemoveStation])
     
-    def __init__(self, connection, transparent):
+    def __init__(self, connection, transparent, is_blacklisted = False):
         EventMixin.__init__(self)
         self.connection = connection
         self.transparent = transparent
+        self.is_blacklisted = is_blacklisted
 
         
         connection.addListeners(self)
@@ -135,6 +137,8 @@ class WifiAuthenticateSwitch(EventMixin):
         self.connection.send(msg)
 
     def _handle_PacketIn(self, event):
+        if self.is_blacklisted:
+            return
         if event.port != MON_PORT:
             return
 
@@ -207,6 +211,28 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.stations = {}
         self.timer = None
         self.set_timer()
+        self.blacklisted_aps = []
+        if USE_BLACKLIST == 1:
+            self.blacklisted_aps = self.load_blacklisted_aps()
+
+    def load_blacklisted_aps(self):
+        b_aps = []
+        f = open('ext/wifi_authenticator/ap_blacklist.txt','r')
+        for line in f.readlines():
+            log.debug(line)
+            if line.startswith('#'):
+                continue
+            b_aps.append(int(line.rstrip(),16))
+        f.close()
+        log.debug("Loading List of Blacklisted APs:")
+        for ap in b_aps:
+            log.debug("%x" % ap)
+        return b_aps
+
+    def is_blacklisted(self, dpid):
+        if dpid in self.blacklisted_aps:
+            return True
+        return False
 
     def set_timer(self):
         '''
@@ -288,7 +314,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         Setup a Wifi AP for each new connection.
         '''
         log.debug("Connection %s" % (event.connection))
-        wifi_ap = WifiAuthenticateSwitch(event.connection, self.transparent)
+        wifi_ap = WifiAuthenticateSwitch(event.connection, self.transparent, self.is_blacklisted(event.dpid))
         wifi_ap.addListeners(self)
         self.aps[event.dpid] = wifi_ap
 
