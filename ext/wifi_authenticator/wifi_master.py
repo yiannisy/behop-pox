@@ -24,6 +24,8 @@ MON_PORT  = 2 # monitor port where we expect mgmt packets from.
 WLAN_PORT = 3 # wireless port
 SERVING_SSID = 'malakas'
 ASSOC_TIMEOUT = 5
+VBSSID_RANGE_MIN = 20
+VBSSID_RANGE_MAX = 40
 
 class ProbeRequest(Event):
     '''Event raised by an AP when a probe request is received.
@@ -200,7 +202,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.aps = {}
         self.vbssid_base = 0x020000000000
         self.vbssid_backup = 0x060000000000
-        self.vbssid_pool = [self.vbssid_base | (1 << i) for i in range(0,40)]
+        self.vbssid_pool = [self.vbssid_base | (1 << i) for i in range(VBSSID_RANGE_MIN,VBSSID_RANGE_MAX)]
         self.vbssid_map = {}
         self.stations = {}
         self.timer = None
