@@ -551,8 +551,9 @@ class DefaultChannelBot (ChannelBot):
       self.reply(event, new_channel = new_channel)
 
   def _unhandled (self, event):
-    log.warn("Default channel got unknown command: "
-              + str(event.msg.get('cmd')))
+    pass
+    #log.warn("Default channel got unknown command: "
+    #          + str(event.msg.get('cmd')))
 
   def _gen_channel_name (self, prefix = "temp"):
     """ Makes up a channel name """

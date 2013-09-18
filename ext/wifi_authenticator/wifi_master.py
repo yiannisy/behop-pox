@@ -96,7 +96,8 @@ class Station(object):
         self.addr = addr # mac address of station
         self.dpid = None # dpid to which the station is assigned.
         self.vbssid = None # assigned vbssid        
-        self.last_seen = time.time()
+        self.last_seen = time.time() # last heard from the AP.
+        self.last_snr = 0 # SNR of last packet as reported form the dpid.
         self.state = 'SNIFF'
 
 class WifiAuthenticateSwitch(EventMixin):
@@ -148,6 +149,10 @@ class WifiAuthenticateSwitch(EventMixin):
         if rdtap.version != 0 or rd_len != 34: # or 18 on the pi's...
             #print "unrecognized rdtap header - ignore... (%d, %d)" % (rdtap.version, rd_len)
             return
+        if rdtap.ant_sig_present:
+            snr = rdtap.ant_sig.db - (-90)
+        else:
+            snr = 0
 
         try:
             ie = dpkt.ieee80211.IEEE80211(packet.raw[rd_len:])
@@ -162,15 +167,15 @@ class WifiAuthenticateSwitch(EventMixin):
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_PROBE_REQ):
             #log.debug("%s -> %s (%s)" % (binascii.hexlify(ie.mgmt.src), ie.ssid, ie.ssid.data))
-            self.raiseEvent(ProbeRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), 0, ie.ssid.data))
+            self.raiseEvent(ProbeRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), snr, ie.ssid.data))
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_AUTH):
-            self.raiseEvent(AuthRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), 0))
+            self.raiseEvent(AuthRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr))
             #self.send_packet_out(AUTH_REPLY_STR)
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_ASSOC_REQ):
             params = WifiStaParams(packet.raw)
-            self.raiseEvent(AssocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), 0, params))
+            self.raiseEvent(AssocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
 
         #if (ie.type == 0 and ie.subtype != 8):
         #    print "Received %x from %s" % (ie.subtype, binascii.hexlify(ie.mgmt.src))
@@ -193,7 +198,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
     * Talks to the Information Base (IB) and decides whether to move a station and where.
     * Monitors stations, checks for timeouts, etc.
     '''
-    _eventMixin_events = set([AddStation, RemoveStation])
+    _eventMixin_events = set([AddStation, RemoveStation, MoveStation])
 
     def __init__(self, transparent):
         '''
@@ -219,7 +224,6 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         b_aps = []
         f = open('ext/wifi_authenticator/ap_blacklist.txt','r')
         for line in f.readlines():
-            log.debug(line)
             if line.startswith('#'):
                 continue
             b_aps.append(int(line.rstrip(),16))
@@ -239,7 +243,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         Setup timer for stations timeout.
         '''
         if self.timer : self.timer.cancel()
-        self.timer = Timer(1, self.check_timeout_events, recurring=True)
+        self.timer = Timer(5, self.check_timeout_events, recurring=True)
 
     def delete_station(self, sta):
         '''
@@ -261,17 +265,17 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         @TODO : Check the state of the station and vbssid before removing.
         @TODO : Probably generate related deauth/disassoc messages from here (?)
         '''
-        log.debug("Remaining VBSSIDs : %d" % len(self.vbssid_pool))
-        log.debug("Currently Connected APs : %s" % [dpid_to_str(mac) for mac in self.aps])
         now = time.time()
         for sta in self.stations.values():
             if now - sta.last_seen > ASSOC_TIMEOUT and sta.state != "ASSOC":
                 self.delete_station(sta)
-        
+        log.debug("Remaining VBSSIDs : %d" % len(self.vbssid_pool))
+        log.debug("Currently Connected APs : %s" % [dpid_to_str(mac) for mac in self.aps])
+        log.debug("Known Stations : %s" % [(dpid_to_str(sta.addr),sta.state, sta.dpid) for sta in self.stations.values()])
         
     def is_valid_probe_request(self, event):
         '''
-        Checks if a sniffed association request is for us.
+        Checks if a sniffed probe request is for us.
         '''
         #log.debug("Got request for SSID %s" % event.ssid)
         return ((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None))
@@ -288,6 +292,30 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         '''
         log.debug("%s %s %s %s" % (event.bssid, sta.vbssid, event.dpid, sta.dpid))
         return ((event.bssid == sta.vbssid) and (event.dpid == sta.dpid))
+
+    def check_sta_switch(self, event, sta):
+        '''
+        Checks if we need to switch AP for this sta.
+        '''
+        # if sta is not assigned to an AP will grab it by default, no need to interfere here.
+        if (sta.dpid == None):
+            return
+        if (sta.dpid != event.dpid):
+            # if we are here we got a packet from an AP different from the one that the station
+            # is currently assigned. We ignore this unless one of the following happens:
+            # i) the packet comes with a much better SNR that the sta's AP.
+            # ii) it's been a long time since we last heard from the last AP.
+            log.debug("Check sta switch %x: %d (%x), %d (%x)" % (sta.addr, event.snr, 
+                                                                 event.dpid, sta.last_snr, sta.dpid))
+            if (event.snr - sta.last_snr > 15 and sta.last_snr < 20) or (time.time() - sta.last_seen > 5e6):
+                log.debug("Triggering Change for station %x" % sta.addr)
+                if (sta.state != 'SNIFF'):
+                    # state already installed in AP - need to move.
+                    self.raiseEvent(MoveStation(sta.addr, sta.dpid, event.dpid))
+                sta.dpid = event.dpid
+            else:
+                log.debug("No change needed - skipping...")
+                
 
     def get_vbssid_for_host(self, src_addr):
         '''
@@ -359,12 +387,15 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             self.stations[event.src_addr] = Station(event.src_addr)
 
         sta = self.stations[event.src_addr]
+
+        self.check_sta_switch(event, sta)
             
         # check if this is a valid probe-req to process.
         # this needs more sophistication : we could sniff on irrelevant probe-reqs
-        # or we might have to decide between multiple dpids...
-        if self.is_valid_probe_request(event):
+        # or we might have to decide between multiple dpids...            
+        if (self.is_valid_probe_request(event)):
             sta.last_seen = time.time()
+            sta.snr = event.snr
             sta.state = self.processFSM(sta.state,'ProbeReq', event)
 
     def _handle_AuthRequest(self, event):
@@ -374,6 +405,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         else:
             self.stations[event.src_addr] = Station(event.src_addr)
             sta = self.stations[event.src_addr]
+
+        self.check_sta_switch(event, sta)
 
         if self.is_valid_auth_request(event, sta):
             sta.last_seen = time.time()
@@ -386,6 +419,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         else:
             self.stations[event.src_addr] = Station(event.src_addr)
             sta = self.stations[event.src_addr]
+
+        self.check_sta_switch(event, sta)
 
         if self.is_valid_assoc_request(event, sta):
             sta.last_seen = time.time()
@@ -419,6 +454,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         dpid = event.dpid
         self.stations[addr].vbssid = self.get_vbssid_for_host(addr)
         self.stations[addr].dpid = dpid
+        self.stations[addr].last_snr = event.snr
         self.sendProbeResponse(event)
         self.raiseEvent(AddStation(event.dpid, event.src_addr, self.stations[addr].vbssid, {}))
         log.debug("Sending Probe Response to %x" % addr)

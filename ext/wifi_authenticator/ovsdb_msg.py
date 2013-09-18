@@ -30,7 +30,7 @@ class OvsDBBot(ChannelBot, EventMixin):
         log.debug("connection joined")
 
     def _handle_MessageReceived(self, event, msg):
-        log.debug(msg)
+        #log.debug(msg)
         if msg.has_key("method") and msg['method'] == 'echo':
             self.send_echo_reply(event.con, msg)
             if event.con not in self.connections.values():
@@ -54,8 +54,6 @@ class OvsDBBot(ChannelBot, EventMixin):
         con.send(GET_DPID)
 
     def _handle_AddStation(self, event):
-        log.debug("Received add station event")
-        log.debug(event)
         add_json = ADD_STATION.copy()
         _addr = "%012x" % event.src_addr
         _vbssid = "%012x" % event.vbssid
@@ -64,15 +62,12 @@ class OvsDBBot(ChannelBot, EventMixin):
         if self.connections.has_key(event.dpid):
             con = self.connections[event.dpid]
             con.send(add_json)
-            log.debug(add_json)
         else:
             log.debug("key not found...")
             for key in self.connections.keys():
                 log.debug("DPID : %x" % key)
 
     def _handle_RemoveStation(self, event):
-        log.debug("Received remove station event")
-        log.debug(event)
         rem_json = DEL_STATION.copy()
         _addr = "%012x" % event.src_addr
         rem_json["params"][1]["where"] = [["addr","==",_addr]]
@@ -80,7 +75,6 @@ class OvsDBBot(ChannelBot, EventMixin):
         if self.connections.has_key(event.dpid):
             con = self.connections[event.dpid]
             con.send(rem_json)
-            log.debug(rem_json)
         else:
             log.debug("key not found...")
             for key in self.connections.keys():
