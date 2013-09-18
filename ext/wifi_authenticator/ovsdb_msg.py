@@ -4,8 +4,9 @@ Adds/Removes Stations from Access Points.
 
 from pox.core import core
 from pox.messenger import *
+from pox.lib.recoco import Timer
 
-log = core.getLogger()
+log = core.getLogger("WifiMessenger")
 
 G_RATES = [1,2,6,11,12,18,24,36,48,54]
 G_RATES_LEN = len(G_RATES)
@@ -15,6 +16,38 @@ GET_DPID = {"method":"transact", "params":["Open_vSwitch", {"op":"select","table
 ADD_STATION = {"method":"transact","params":["Open_vSwitch",{"op":"insert","table":"WifiSta","row":{"addr":None,"vbssid":None}}],"id":1}
 
 DEL_STATION = {"method":"transact","params":["Open_vSwitch",{"op":"delete","table":"WifiSta","where":[]}],"id":2}
+
+class AggService(object):
+    def __init__(self, parent, con, event):
+        self.con = con
+        self.parent = parent
+        self.listeners = con.addListeners(self)
+        self.count = 0
+        self.timer = Timer(1, self.poll_snr, recurring=True)
+
+        self._handle_MessageReceived(event, event.msg)
+
+    def poll_snr(self):
+        self.con.send({'CHANNEL':'MON_IB','query':'snr_summary'})
+
+    def _handle_MessageReceived(self, event, msg):
+        #log.info("Agg Received message : %s" % msg);
+        if msg['query'] == 'snr_summary':
+            log.info("Overheard Stations")
+            log.info(msg['res'].keys())
+
+    def _handle_ConnectionClosed(self, event):
+        self.con.removeListeners(self.listeners)
+        self.parent.clients.pop(self.con, None)
+    
+
+class AggBot(ChannelBot):
+    def _init(self, extra):
+        self.clients = {}
+    def _unhandled(self, event):
+        connection = event.con
+        if connection not in self.clients:
+            self.clients[connection] = AggService(self, connection, event)
 
 class OvsDBBot(ChannelBot, EventMixin):
     def __init__(self, channel, nexus = None, weak = False, extra = {}):
@@ -80,15 +113,16 @@ class OvsDBBot(ChannelBot, EventMixin):
             for key in self.connections.keys():
                 log.debug("DPID : %x" % key)
         
-class OvsDBManager(object):
+class MessengerManager(object):
     def __init__(self):
         core.listen_to_dependencies(self)
-        log.debug("OvsDBManager Started")
+        log.debug("Messenger Service Started")
 
     def _all_dependencies_met(self):
         log.debug("Dependencies Met!!")
         core.MessengerNexus.default_bot.add_bot(OvsDBBot)
         OvsDBBot(core.MessengerNexus.get_channel(""))
-
+        AggBot(core.MessengerNexus.get_channel("MON_IB"))
+        
 def launch():
-    OvsDBManager()
+    MessengerManager()
