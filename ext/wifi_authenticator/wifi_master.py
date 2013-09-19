@@ -8,6 +8,7 @@ from pox.lib.util import dpid_to_str
 from pox.lib.util import str_to_bool
 import time
 from pox.lib.recoco import Timer
+from ovsdb_msg import SnrSummary,AggService, AggBot
 
 import dpkt, binascii
 from pox.lib.revent import *
@@ -18,6 +19,7 @@ from dpkt import NeedData
 import hashlib
 
 log = core.getLogger("WifiMaster")
+log_fsm = core.getLogger("WifiFSM")
 
 WAN_PORT  = 1 # ethernet port
 MON_PORT  = 2 # monitor port where we expect mgmt packets from.
@@ -27,6 +29,8 @@ ASSOC_TIMEOUT = 5
 VBSSID_RANGE_MIN = 20
 VBSSID_RANGE_MAX = 40
 USE_BLACKLIST = 1
+GOOD_SNR_THRESHOLD = 30
+SNR_SWITCH_THRESHOLD = 10
 
 class ProbeRequest(Event):
     '''Event raised by an AP when a probe request is received.
@@ -198,7 +202,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
     * Talks to the Information Base (IB) and decides whether to move a station and where.
     * Monitors stations, checks for timeouts, etc.
     '''
-    _eventMixin_events = set([AddStation, RemoveStation, MoveStation])
+    _eventMixin_events = set([AddStation, RemoveStation, MoveStation, SnrSummary])
 
     def __init__(self, transparent):
         '''
@@ -206,6 +210,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         '''
         EventMixin.__init__(self)
         AssociationFSM.__init__(self)
+        self.agg_msnger = AggBot(core.MessengerNexus.get_channel("MON_IB"), extra={'parent':self})
         core.openflow.addListeners(self)
         self.transparent = transparent
         self.aps = {}
@@ -269,9 +274,6 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         for sta in self.stations.values():
             if now - sta.last_seen > ASSOC_TIMEOUT and sta.state != "ASSOC":
                 self.delete_station(sta)
-        log.debug("Remaining VBSSIDs : %d" % len(self.vbssid_pool))
-        log.debug("Currently Connected APs : %s" % [dpid_to_str(mac) for mac in self.aps])
-        log.debug("Known Stations : %s" % [(dpid_to_str(sta.addr),sta.state, sta.dpid) for sta in self.stations.values()])
         
     def is_valid_probe_request(self, event):
         '''
@@ -305,16 +307,29 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             # is currently assigned. We ignore this unless one of the following happens:
             # i) the packet comes with a much better SNR that the sta's AP.
             # ii) it's been a long time since we last heard from the last AP.
-            log.debug("Check sta switch %x: %d (%x), %d (%x)" % (sta.addr, event.snr, 
-                                                                 event.dpid, sta.last_snr, sta.dpid))
             if (event.snr - sta.last_snr > 15 and sta.last_snr < 20) or (time.time() - sta.last_seen > 5e6):
                 log.debug("Triggering Change for station %x" % sta.addr)
                 if (sta.state != 'SNIFF'):
                     # state already installed in AP - need to move.
                     self.raiseEvent(MoveStation(sta.addr, sta.dpid, event.dpid))
                 sta.dpid = event.dpid
-            else:
-                log.debug("No change needed - skipping...")
+
+    def check_sta_move(self, sta, sta_summary):
+        '''
+        Checks whether we should move a station from an AP to another.
+        Works only for stations who are already associated.
+        '''
+        cur_dpid_str = '%012x' % sta.dpid
+        cur_dpid = sta.dpid
+        cur_snr = sta_summary[cur_dpid_str][0]
+        max_dpid, max_snr = max([(int(dpid,16),sta_summary[dpid][0]) for dpid in sta_summary.keys()], key=lambda sta:sta[1])
+        log.debug("Station %012x : Cur_SNR : %d (%012x) | Max_SNR : %d (%012x)" % (sta.addr, cur_snr, cur_dpid, max_snr, max_dpid))
+        if cur_snr > GOOD_SNR_THRESHOLD:
+            return
+        if max_snr - cur_snr > SNR_SWITCH_THRESHOLD:
+            log.debug("Triggering Change for station %012x (%012x -> %012x)" % (sta.addr, cur_dpid, max_dpid))
+            self.move_station(sta.addr, cur_dpid, max_dpid)
+        
                 
 
     def get_vbssid_for_host(self, src_addr):
@@ -396,10 +411,11 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         if (self.is_valid_probe_request(event)):
             sta.last_seen = time.time()
             sta.snr = event.snr
-            sta.state = self.processFSM(sta.state,'ProbeReq', event)
+            new_state = self.processFSM(sta.state,'ProbeReq', event)
+            log_fsm.debug("%012x : %s -> %s" % (sta.addr, sta.state, new_state))
+            sta.state = new_state
 
     def _handle_AuthRequest(self, event):
-        log.info("Got an auth request from %x!!" % event.src_addr)
         if event.src_addr in self.stations.keys():
             sta = self.stations[event.src_addr]
         else:
@@ -413,7 +429,6 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             sta.state = self.processFSM(sta.state, 'AuthReq', event)
 
     def _handle_AssocRequest(self, event):
-        log.info("Got an assoc request event from %x!!" % event.src_addr)
         if event.src_addr in self.stations.keys():
             sta = self.stations[event.src_addr]
         else:
@@ -442,6 +457,33 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.raiseEvent(RemoveStation(event.old_dpid, sta.addr))
         self.raiseEvent(AddStation(event.new_dpid, sta.addr, sta.vbssid, params))
         sta.dpid = event.new_dpid
+
+    def move_station(self, addr, old_dpid, new_dpid):
+        log.debug("Received Request to move station %x from %x to %x" % (addr, old_dpid,
+                                                                         new_dpid))
+        # Check that the node is currently associated to an AP.
+        if addr not in self.stations.keys() or self.stations[addr].state != 'ASSOC' or self.stations[addr].dpid  != old_dpid:                
+            log.debug("Only associated nodes can move...")
+
+        # else we can move the station across the two APs.
+        sta = self.stations[addr]
+        params = {}
+        self.raiseEvent(RemoveStation(old_dpid, sta.addr))
+        self.raiseEvent(AddStation(new_dpid, sta.addr, sta.vbssid, params))
+        sta.dpid = new_dpid
+
+
+    def _handle_SnrSummary(self, event):
+        log.debug('SNR Summary for associated stations')
+        for sta in self.stations.values():
+            if sta.state == 'ASSOC':
+                vbssid_str = "%012x" % sta.vbssid
+                try:
+                    sta_summary = event.summary[vbssid_str]
+                except KeyError:
+                    log.debug("sta %s not found in snr summary" % (vbssid_str))
+                    continue
+                self.check_sta_move(sta, sta_summary)
                        
     def sniff_to_reserve(self, event):
         '''

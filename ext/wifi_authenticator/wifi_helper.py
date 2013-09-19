@@ -10,6 +10,7 @@ HOMENETS_OUI = "020000" # needs to be better defined.
 BEACON_INTERVAL = 1000
 
 log = core.getLogger("WifiMaster")
+log_fsm = core.getLogger("WifiFSM")
 
 def mac_to_array(mac):
     s_mac = mac

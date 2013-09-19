@@ -17,8 +17,17 @@ ADD_STATION = {"method":"transact","params":["Open_vSwitch",{"op":"insert","tabl
 
 DEL_STATION = {"method":"transact","params":["Open_vSwitch",{"op":"delete","table":"WifiSta","where":[]}],"id":2}
 
-class AggService(object):
+class SnrSummary(Event):
+    def __init__(self, summary):
+        Event.__init__(self)
+        self.summary = summary
+        
+class AggService(EventMixin):
+    _eventMixin_events = set([SnrSummary])
+
     def __init__(self, parent, con, event):
+        EventMixin.__init__(self)
+        self.addListeners(parent.parent)
         self.con = con
         self.parent = parent
         self.listeners = con.addListeners(self)
@@ -33,8 +42,9 @@ class AggService(object):
     def _handle_MessageReceived(self, event, msg):
         #log.info("Agg Received message : %s" % msg);
         if msg['query'] == 'snr_summary':
+            self.raiseEvent(SnrSummary(msg['res']))
             log.info("Overheard Stations")
-            log.info(msg['res'].keys())
+            log.info(["%s" % key for key in msg['res'].keys()])
 
     def _handle_ConnectionClosed(self, event):
         self.con.removeListeners(self.listeners)
@@ -44,6 +54,7 @@ class AggService(object):
 class AggBot(ChannelBot):
     def _init(self, extra):
         self.clients = {}
+        self.parent = extra['parent']
     def _unhandled(self, event):
         connection = event.con
         if connection not in self.clients:
@@ -122,7 +133,7 @@ class MessengerManager(object):
         log.debug("Dependencies Met!!")
         core.MessengerNexus.default_bot.add_bot(OvsDBBot)
         OvsDBBot(core.MessengerNexus.get_channel(""))
-        AggBot(core.MessengerNexus.get_channel("MON_IB"))
+        #AggBot(core.MessengerNexus.get_channel("MON_IB"))
         
 def launch():
     MessengerManager()
