@@ -6,7 +6,7 @@ from pox.core import core
 from pox.messenger import *
 from pox.lib.recoco import Timer
 
-log = core.getLogger("WifiOvsDB")
+log = core.getLogger("WifiOvsDB5")
 
 G_RATES = [1,2,6,11,12,18,24,36,48,54]
 G_RATES_LEN = len(G_RATES)
@@ -103,7 +103,7 @@ class OvsDBBot(ChannelBot, EventMixin):
         _addr = "%012x" % event.src_addr
         _vbssid = "%012x" % event.vbssid
         add_json["params"][1]["row"] = {"addr":_addr, "vbssid": _vbssid}
-        log.debug("Adding Station %s to %d" % (_addr, event.dpid))
+        log.debug("Adding Station %s to %x" % (_addr, event.dpid))
         if self.connections.has_key(event.dpid):
             con = self.connections[event.dpid]
             con.send(add_json)
