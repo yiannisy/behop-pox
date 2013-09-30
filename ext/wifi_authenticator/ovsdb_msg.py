@@ -6,7 +6,7 @@ from pox.core import core
 from pox.messenger import *
 from pox.lib.recoco import Timer
 
-log = core.getLogger("WifiMessenger")
+log = core.getLogger("WifiOvsDB")
 
 G_RATES = [1,2,6,11,12,18,24,36,48,54]
 G_RATES_LEN = len(G_RATES)
@@ -43,8 +43,8 @@ class AggService(EventMixin):
         #log.info("Agg Received message : %s" % msg);
         if msg['query'] == 'snr_summary':
             self.raiseEvent(SnrSummary(msg['res']))
-            log.info("Overheard Stations")
-            log.info(["%s" % key for key in msg['res'].keys()])
+            #log.info("Overheard Stations")
+            #log.info(["%s" % key for key in msg['res'].keys()])
 
     def _handle_ConnectionClosed(self, event):
         self.con.removeListeners(self.listeners)
@@ -87,6 +87,7 @@ class OvsDBBot(ChannelBot, EventMixin):
                 self.connections[dpid] = event.con
                 log.debug("Appending OVSDB connection for %x" % dpid)
                 log.debug("Removing existing stations")
+                log.debug(DEL_STATION)
                 event.con.send(DEL_STATION)
             except (KeyError, TypeError) as e:
                 pass

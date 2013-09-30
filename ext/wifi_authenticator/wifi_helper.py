@@ -258,7 +258,6 @@ class FSM(object):
             return
         if transition['handler']:
             transition['handler'](*args)
-        #log.debug("%s --%s--> %s" % (state,input, transition['next_state']))
         return transition['next_state']
 
 class AssociationFSM(FSM):
@@ -269,15 +268,15 @@ class AssociationFSM(FSM):
         self.add_transition('SNIFF','ProbeReq',self.sniff_to_reserve,'RESERVED')
         self.add_transition('SNIFF','AuthReq', None, 'SNIFF')
         self.add_transition('SNIFF','AssocReq',None, 'SNIFF')
-        self.add_transition('RESERVED','ProbeReq',self.sendProbeResponse,'RESERVED')
+        self.add_transition('RESERVED','ProbeReq',self.reinstallSendProbeResponse,'RESERVED')
         self.add_transition('RESERVED','AuthReq',self.sendAuthResponse,'AUTH')
-        self.add_transition('RESERVED','AssocReq',None,'RESERVED')
-        self.add_transition('AUTH','ProbeReq',self.sendProbeResponse,'AUTH')
-        self.add_transition('AUTH','AuthReq',self.sendAuthResponse,'AUTH')
+        self.add_transition('RESERVED','AssocReq',self.reinstallSendAssocResponse,'ASSOC')
+        self.add_transition('AUTH','ProbeReq',self.reinstallSendProbeResponse,'AUTH')
+        self.add_transition('AUTH','AuthReq',self.reinstallSendAuthResponse,'AUTH')
         self.add_transition('AUTH','AssocReq',self.auth_to_assoc,'ASSOC')
-        self.add_transition('ASSOC','ProbeReq',self.sendProbeResponse,'ASSOC')
-        self.add_transition('ASSOC','AuthReq',self.sendAuthResponse,'ASSOC')
-        self.add_transition('ASSOC','AssocReq',self.sendAssocResponse,'ASSOC')
+        self.add_transition('ASSOC','ProbeReq',self.reinstallSendProbeResponse,'ASSOC')
+        self.add_transition('ASSOC','AuthReq',self.reinstallSendAuthResponse,'ASSOC')
+        self.add_transition('ASSOC','AssocReq',self.reinstallSendAssocResponse,'ASSOC')
 
     def sniff_to_reserve(self, *args):
         pass
@@ -293,3 +292,13 @@ class AssociationFSM(FSM):
 
     def sendAssocResponse(self, *args):
         pass
+
+    def reinstallSendProbeResponse(self, *args):
+        pass
+
+    def reinstallSendAuthResponse(self, *args):
+        pass
+
+    def reinstallSendAssocResponse(self, *args):
+        pass
+
