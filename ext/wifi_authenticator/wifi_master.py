@@ -4,7 +4,7 @@ A WiFi Authenticator.
 
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
-from pox.lib.util import dpid_to_str
+from pox.lib.util import dpid_to_str as mac_to_str
 from pox.lib.util import str_to_bool
 import time
 from pox.lib.recoco import Timer
@@ -25,10 +25,17 @@ log = core.getLogger("WifiMessenger")
 log_fsm = core.getLogger("WifiFSM")
 log_mob = core.getLogger("WifiMobility")
 
+# AP variables
 WAN_PORT  = 1 # ethernet port
 MON_PORT  = 2 # monitor port where we expect mgmt packets from.
 WLAN_PORT = 3 # wireless port
 SERVING_SSID = 'malakas'
+
+# BH parameters
+BH_UPLINK_PORT = 1
+BH_AP_PRIO = 1
+BH_STA_PRIO = 1
+
 ASSOC_TIMEOUT = 5
 VBSSID_RANGE_MIN = 20
 VBSSID_RANGE_MAX = 40
@@ -121,17 +128,18 @@ class BackhaulSwitch(object):
         self.transparent = transparent
         self.connection.addListeners(self)
         #simple switch hack for now
-        self._set_simple_flow(1,4)
+        # self._set_simple_flow(1,4)
         # all ports should go to the uplink to start with.
         self._set_simple_flow(4,1)
         self._set_simple_flow(5,1)
         self._set_simple_flow(3,1)
         self._set_simple_flow(2,1)
         # setup flows for in-band controls to APs)
-        self._set_simple_flow(1, 2, mac_dst=EthAddr(b"\xf8\x1a\x67\x52\xfd\x7e")) # pi-ap4 @ G342
-        self._set_simple_flow(1, 3, mac_dst=EthAddr(b"\xf8\x1a\x67\x53\x11\x93")) # pi-ap4 @ G338
-        self._set_simple_flow(1, 4, mac_dst=EthAddr(b"\x64\x66\xb3\x93\xfa\x74")) # pi-ap5 @ G352
-        self._set_simple_flow(1, 5, mac_dst=EthAddr(b"\xf8\x1a\x67\x83\x97\x93")) # pi-ap6 @ G352
+        self.topo = { 0xf81a6752fd7e:2, 0xf81a67531193:3, 0x6466b393fa74:4, 0xf81a67839793:5 }
+        self._set_simple_flow(1, 2, mac_dst=EthAddr("f81a6752fd7e")) # pi-ap4 @ G342
+        self._set_simple_flow(1, 3, mac_dst=EthAddr("f81a67531193")) # pi-ap5 @ G338
+        self._set_simple_flow(1, 4, mac_dst=EthAddr("6466b393fa74")) # pi-ap8 @ G352
+        self._set_simple_flow(1, 5, mac_dst=EthAddr("f81a67839793")) # pi-ap6 @ G352
 
     def _set_simple_flow(self,port_in,port_out, priority=1,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None):
         msg = of.ofp_flow_mod()
@@ -148,6 +156,16 @@ class BackhaulSwitch(object):
                 msg.match_nw_src = ip_src
         msg.actions.append(of.ofp_action_output(port = port_out))
         self.connection.send(msg)
+
+    def _del_simple_flow(self, port_in, priority=1,mac_dst=None):
+        msg = of.ofp_flow_mod(command=of.OFPFC_DELETE)
+        msg.match.in_port = port_in
+        if (mac_dst):
+            msg.match.dl_dst = mac_dst
+        if priority:
+            msg.match.priority = priority
+        self.connection.send(msg)
+
 
 
 
@@ -306,7 +324,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         '''
         if self.vbssid_map.has_key(sta.addr):
             # this might not work...
-            self.raiseEvent(RemoveStation(sta.dpid, sta.addr))
+            self.removeStation(sta.dpid, sta.addr)
             del self.vbssid_map[sta.addr]
             self.vbssid_pool.append(sta.vbssid)
         log_fsm.debug("%012x : %s -> NONE" % (sta.addr, sta.state))
@@ -528,8 +546,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         # else we can move the station across the two APs.
         sta = self.stations[event.addr]
         params = {}
-        self.raiseEvent(RemoveStation(event.old_dpid, sta.addr))
-        self.raiseEvent(AddStation(event.new_dpid, sta.addr, sta.vbssid, params))
+        self.removeStation(event.old_dpid, sta.addr)
+        self.addStation(event.new_dpid, sta.addr)
         sta.dpid = event.new_dpid
 
     def move_station(self, addr, old_dpid, new_dpid):
@@ -542,8 +560,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         # else we can move the station across the two APs.
         sta = self.stations[addr]
         params = {}
-        self.raiseEvent(RemoveStation(old_dpid, sta.addr))
-        self.raiseEvent(AddStation(new_dpid, sta.addr, sta.vbssid, params))
+        self.removeStation(old_dpid, sta.addr)
+        self.addStation(new_dpid, sta.addr)        
         sta.dpid = new_dpid
 
 
@@ -557,6 +575,21 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
                     log.debug("sta %s not found in snr summary" % (vbssid_str))
                     continue
                 self.check_sta_move(sta, sta_summary)
+
+    def addStation(self, dpid, addr):
+        '''
+        Adds a station to a dpid. This means :
+        * add a flow to the backhaul switch.
+        * Add state to the AP.
+        '''
+        self.bh_switch._set_simple_flow(BH_UPLINK_PORT, self.bh_switch.topo[dpid], mac_dst=EthAddr(mac_to_str(addr)))
+        self.raiseEvent(AddStation(dpid, addr, self.stations[addr].vbssid,{}))
+        
+    def removeStation(self, dpid, addr):
+        self.bh_switch._del_simple_flow(BH_UPLINK_PORT,mac_dst=EthAddr(mac_to_str(addr)))
+        self.raiseEvent(RemoveStation(dpid, addr))
+
+                        
                        
     def sniff_to_reserve(self, event):
         '''
@@ -571,22 +604,19 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.stations[addr].dpid = dpid
         self.stations[addr].last_snr = event.snr
         self.sendProbeResponse(event)
-        self.raiseEvent(AddStation(event.dpid, event.src_addr, self.stations[addr].vbssid, {}))
+        self.addStation(event.dpid, event.src_addr)
         log.debug("Sending Probe Response to %x" % addr)
 
     def reinstallSendProbeResponse(self, event):
-        addr = event.src_addr
-        self.raiseEvent(AddStation(event.dpid, addr, self.stations[addr].vbssid, {}))
+        self.addStation(event.dpid, event.src_addr)
         self.sendProbeResponse(event)
 
     def reinstallSendAuthResponse(self, event):
-        addr = event.src_addr
-        self.raiseEvent(AddStation(event.dpid, addr, self.stations[addr].vbssid, {}))
+        self.addStation(event.dpid, event.src_addr)
         self.sendAuthResponse(event)
 
     def reinstallSendAssocResponse(self, event):
-        addr = event.src_addr
-        self.raiseEvent(AddStation(event.dpid, addr, self.stations[addr].vbssid, {}))
+        self.addStation(event.dpid, event.src_addr)
         self.sendAssocResponse(event)
 
 
@@ -598,9 +628,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         vbssid = self.stations[addr].vbssid
         self.sendAssocResponse(event)
         log.debug("Sending Assoc Response to %x" % addr)
-        log.info("Adding %s to AP %s with VBSSID %x" % (event.src_addr, event.dpid, vbssid))
-        #self.raiseEvent(AddStation(event.dpid, event.src_addr, vbssid, event.params))
-                
+                        
     def sendProbeResponse(self, event):
         vbssid = self.stations[event.src_addr].vbssid
         ssid = SERVING_SSID
