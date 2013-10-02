@@ -8,6 +8,7 @@ from pox.core import core
 RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x02\x6c\x09\xa0\x00\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
 HOMENETS_OUI = "020000" # needs to be better defined.
 BEACON_INTERVAL = 1000
+DEFAULT_CHANNEL = 11
 
 log = core.getLogger("WifiMaster")
 log_fsm = core.getLogger("WifiFSM")
@@ -20,7 +21,7 @@ def mac_to_array(mac):
                                  s_mac[6:8], s_mac[8:10], s_mac[10:]]]
     return a_mac
 
-def generate_probe_response(vbssid, ssid, dst_addr):
+def generate_probe_response(vbssid, ssid, dst_addr, channel=DEFAULT_CHANNEL):
     '''
     Generates probe response for the given (vbssid, ssid, dst_addr) tuple.
     '''
@@ -56,10 +57,23 @@ def generate_probe_response(vbssid, ssid, dst_addr):
     # Beacon Frame
     baconFrame = dot11.Dot11ManagementProbeResponse()
     baconFrame.set_ssid(ssid)
-    baconFrame.set_capabilities(0x0401)
+    baconFrame.set_capabilities(0x0421)
     baconFrame.set_beacon_interval(BEACON_INTERVAL)
-    baconFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x18, 0x30, 0x48])
-    baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x12\x24\x60\x6c")
+    baconFrame.set_ds_parameter_set(channel)
+    baconFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24])
+    baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x30\x48\x60\x6c")
+    baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.ERP_INFO,"\x00")
+    # HT Capabilities
+    ht_capa_str = "\x6c\x11\x1b\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    baconFrame._set_element(45,ht_capa_str)
+    # HT info
+    ht_info_ch_str = chr(channel)
+    ht_info_str_rest = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    ht_info_str = ht_info_ch_str + ht_info_str_rest
+    baconFrame._set_element(61, ht_info_str)
+    # Extended Capabilities
+    ext_capab_str = "\x00\x00\x00\x00\x00\x00\x00\x40"
+    baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXTENDED_CAPABILITIES, ext_capab_str)
     
     mngtFrame.contains(baconFrame)
     frameCtrl.contains(mngtFrame)
