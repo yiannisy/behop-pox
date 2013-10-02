@@ -139,7 +139,7 @@ class BackhaulSwitch(object):
         self._set_simple_flow(1, 2, mac_dst=EthAddr("f81a6752fd7e")) # pi-ap4 @ G342
         self._set_simple_flow(1, 3, mac_dst=EthAddr("f81a67531193")) # pi-ap5 @ G338
         self._set_simple_flow(1, 4, mac_dst=EthAddr("6466b393fa74")) # pi-ap8 @ G352
-        self._set_simple_flow(1, 5, mac_dst=EthAddr("f81a67839793")) # pi-ap6 @ G352
+        self._set_simple_flow(1, 5, mac_dst=EthAddr("6466b378fe78")) # pi-ap2 @ G352
 
     def _set_simple_flow(self,port_in,port_out, priority=1,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None):
         msg = of.ofp_flow_mod()
