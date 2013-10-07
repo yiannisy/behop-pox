@@ -179,7 +179,7 @@ def generate_assoc_response(vbssid, dst_addr):
     packet_str = RADIOTAP_STR + resp_str
     return packet_str
 
-def generate_beacon(vbssid, ssid):
+def generate_beacon(vbssid, ssid, channel=DEFAULT_CHANNEL):
     '''
     Generates beacon for the given (vbssid, ssid) tuple.
     '''

@@ -130,18 +130,19 @@ class BackhaulSwitch(object):
         #simple switch hack for now
         # self._set_simple_flow(1,4)
         # all ports should go to the uplink to start with.
-        self._set_simple_flow(4,1)
-        self._set_simple_flow(5,1)
-        self._set_simple_flow(3,1)
-        self._set_simple_flow(2,1)
+        self._set_simple_flow(4,[1])
+        self._set_simple_flow(5,[1])
+        self._set_simple_flow(3,[1])
+        self._set_simple_flow(2,[1])
         # setup flows for in-band controls to APs)
-        self.topo = { 0xf81a6752fd7e:2, 0xf81a67531193:3, 0x6466b393fa74:4, 0xf81a67839793:5 }
-        self._set_simple_flow(1, 2, mac_dst=EthAddr("f81a6752fd7e")) # pi-ap4 @ G342
-        self._set_simple_flow(1, 3, mac_dst=EthAddr("f81a67531193")) # pi-ap5 @ G338
-        self._set_simple_flow(1, 4, mac_dst=EthAddr("6466b393fa74")) # pi-ap8 @ G352
-        self._set_simple_flow(1, 5, mac_dst=EthAddr("6466b378fe78")) # pi-ap2 @ G352
+        self.topo = { 0xf81a6752fd7e:2, 0xf81a67531193:3, 0x6466b393fa74:4, 0x6466b378fe78:5 }
+        self._set_simple_flow(1, [2], mac_dst=EthAddr("f81a6752fd7e")) # pi-ap4 @ G342
+        self._set_simple_flow(1, [3], mac_dst=EthAddr("f81a67531193")) # pi-ap5 @ G338
+        self._set_simple_flow(1, [4], mac_dst=EthAddr("6466b393fa74")) # pi-ap8 @ G352
+        self._set_simple_flow(1, [5], mac_dst=EthAddr("6466b378fe78")) # pi-ap2 @ G352
+        self._set_simple_flow(1, [2,3,4,5], mac_dst=EthAddr("ffffffffffff")) # broadcast
 
-    def _set_simple_flow(self,port_in,port_out, priority=1,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None):
+    def _set_simple_flow(self,port_in, ports_out, priority=1,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None):
         msg = of.ofp_flow_mod()
         msg.idle_timeout=0
         msg.priority = priority
@@ -154,7 +155,8 @@ class BackhaulSwitch(object):
                 msg.match.nw_dst = ip_dst
             if (ip_src):
                 msg.match_nw_src = ip_src
-        msg.actions.append(of.ofp_action_output(port = port_out))
+        for port_out in ports_out:
+            msg.actions.append(of.ofp_action_output(port = port_out))
         self.connection.send(msg)
 
     def _del_simple_flow(self, port_in, priority=1,mac_dst=None):
@@ -582,7 +584,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         * add a flow to the backhaul switch.
         * Add state to the AP.
         '''
-        self.bh_switch._set_simple_flow(BH_UPLINK_PORT, self.bh_switch.topo[dpid], mac_dst=EthAddr(mac_to_str(addr)))
+        self.bh_switch._set_simple_flow(BH_UPLINK_PORT, [self.bh_switch.topo[dpid]], mac_dst=EthAddr(mac_to_str(addr)))
         self.raiseEvent(AddStation(dpid, addr, self.stations[addr].vbssid,{}))
         
     def removeStation(self, dpid, addr):
