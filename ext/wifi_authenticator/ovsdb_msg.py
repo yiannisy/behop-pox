@@ -12,10 +12,9 @@ G_RATES = [1,2,6,11,12,18,24,36,48,54]
 G_RATES_LEN = len(G_RATES)
 
 GET_DPID = {"method":"transact", "params":["Open_vSwitch", {"op":"select","table":"Bridge","where":[],"columns":["datapath_id"]}], "id":1}
-
-ADD_STATION = {"method":"transact","params":["Open_vSwitch",{"op":"insert","table":"WifiSta","row":{"addr":None,"vbssid":None}}],"id":1}
-
-DEL_STATION = {"method":"transact","params":["Open_vSwitch",{"op":"delete","table":"WifiSta","where":[]}],"id":2}
+ADD_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiSta","row":{"addr":None,"vbssid":None}}],"id":1}
+DEL_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiSta","where":[]}],"id":2}
+UPDATE_BSSIDMASK = {"method":"transact", "params":["Wifi_vSwitch",{"op":"update","table":"WifiConfig","where":[],"row":{"bssidmask":None}}],"id":1}
 
 class SnrSummary(Event):
     def __init__(self, summary):
@@ -124,6 +123,16 @@ class OvsDBBot(ChannelBot, EventMixin):
             log.debug("key not found...")
             for key in self.connections.keys():
                 log.debug("DPID : %x" % key)
+
+    def _handle_UpdateBssidmask(self, event):
+        upd_json = UPDATE_BSSIDMASK.copy()
+        _bssidmask = "%012x" % event.bssidmask
+        upd_json["params"][1]["row"]["bssidmask"] = _bssidmask
+        log.debug("Updating BSSIDMASK for AP %x : %x" % (event.dpid, event.bssidmask))
+        if self.connections.has_key(event.dpid):
+            con = self.connections[event.dpid]
+            con.send(upd_json)
+                  
         
 class MessengerManager(object):
     def __init__(self):
