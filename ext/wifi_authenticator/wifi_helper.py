@@ -95,6 +95,11 @@ def generate_probe_response(vbssid, ssid, dst_addr, channel=DEFAULT_CHANNEL):
     # Extended Capabilities
     ext_capab_str = "\x00\x00\x00\x00\x00\x00\x00\x40"
     baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXTENDED_CAPABILITIES, ext_capab_str)
+
+    # Add WMM/QoS
+    wmm_str = "\x02\x01\x01\x04\x00\x03\xa4\x00\x00\x27\xa4\x00\x00\x42\x43\x5e\x00\x62\x32\x2f\x00"
+    baconFrame.add_vendor_specific("\x00\x50\xf2",wmm_str)
+
     
     mngtFrame.contains(baconFrame)
     frameCtrl.contains(mngtFrame)
@@ -204,6 +209,11 @@ def generate_assoc_response(vbssid, dst_addr, params, assoc_id= 0xc001, channel 
     # Extended Capabilities
     ext_capab_str = "\x00\x00\x00\x00\x00\x00\x00\x40"
     assocFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXTENDED_CAPABILITIES, ext_capab_str)
+
+    # Add WMM/QoS
+    wmm_str = "\x02\x01\x01\x04\x00\x03\xa4\x00\x00\x27\xa4\x00\x00\x42\x43\x5e\x00\x62\x32\x2f\x00"
+    assocFrame.add_vendor_specific("\x00\x50\xf2",wmm_str)
+
 
     mngtFrame.contains(assocFrame)
     frameCtrl.contains(mngtFrame)
