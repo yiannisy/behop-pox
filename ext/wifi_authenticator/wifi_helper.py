@@ -345,6 +345,10 @@ class AssociationFSM(FSM):
         self.add_transition('ASSOC','ProbeReq',self.reinstallSendProbeResponse,'ASSOC')
         self.add_transition('ASSOC','AuthReq',self.reinstallSendAuthResponse,'ASSOC')
         self.add_transition('ASSOC','AssocReq',self.reinstallSendAssocResponse,'ASSOC')
+        self.add_transition('ASSOC','DisassocReq',self.delete_station, 'NONE')
+        self.add_transition('AUTH','DisassocReq',self.delete_station, 'NONE')
+        self.add_transition('ASSOC','DeauthReq',self.delete_station, 'NONE')        
+        self.add_transition('AUTH','DeauthReq',self.delete_station, 'NONE')        
 
     def sniff_to_reserve(self, *args):
         pass

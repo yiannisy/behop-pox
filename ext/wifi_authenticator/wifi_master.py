@@ -88,6 +88,37 @@ class AssocRequest(Event):
         self.snr = snr
         self.params = params
 
+class DisassocRequest(Event):
+    '''Event raised by an AP when a disassoc request is received.
+    @dpid : the AP reporting the request.
+    @src_addr : host's address
+    @bssid : the bssid from which the disassoc is reported.
+    '''
+    def __init__(self, dpid, src_addr, bssid):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.src_addr = src_addr
+        self.bssid = bssid
+
+    def __str__(self):
+        return "dpid:%012x | src_addr:%012x | bssid:%012x" % (self.dpid, self.src_addr, self.bssid)
+
+class DeauthRequest(Event):
+    '''Event raised by an AP when a deauth request is received.
+    @dpid : the AP reporting the request.
+    @src_addr : host's address
+    @bssid : the bssid from which the disassoc is reported.
+    '''
+    def __init__(self, dpid, src_addr, bssid):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.src_addr = src_addr
+        self.bssid = bssid
+
+    def __str__(self):
+        return "dpid:%012x | src_addr:%012x | bssid:%012x" % (self.dpid, self.src_addr, self.bssid)
+
+
 class AddStation(Event):
     def __init__(self, dpid, src_addr, vbssid, aid, params):
         Event.__init__(self)
@@ -178,7 +209,7 @@ class BackhaulSwitch(object):
         self.connection.send(msg)
 
 class WifiAuthenticateSwitch(EventMixin):
-    _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, AddStation, RemoveStation])
+    _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, AddStation, RemoveStation, DeauthRequest, DisassocRequest])
     
     def __init__(self, connection, transparent, is_blacklisted = False):
         EventMixin.__init__(self)
@@ -252,6 +283,16 @@ class WifiAuthenticateSwitch(EventMixin):
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_ASSOC_REQ):
             params = WifiStaParams(packet.raw[rd_len:])
             self.raiseEvent(AssocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
+            
+        if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DISASSOC):
+            self.raiseEvent(DisassocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src), 16), 
+                                            int(binascii.hexlify(ie.mgmt.bssid), 16)))
+
+        if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DEAUTH):
+            self.raiseEvent(DeauthRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src), 16), 
+                                            int(binascii.hexlify(ie.mgmt.bssid), 16)))
+
+                            
 
         #if (ie.type == 0 and ie.subtype != 8):
         #    print "Received %x from %s" % (ie.subtype, binascii.hexlify(ie.mgmt.src))
@@ -325,18 +366,24 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         if self.timer : self.timer.cancel()
         self.timer = Timer(5, self.check_timeout_events, recurring=True)
 
-    def delete_station(self, sta):
+    def delete_station(self, sta, update_bssidmask=True):
         '''
         Deletes a station from the AP-map, removes state from the AP itself, 
         and frees reserved vbssid.
+        @sta the station to delete
+        @update_bssidmask : flag for whether to update the bssidmask of the AP
+        the station belongs to. In case there are multiple station-deletes (e.g. 
+        periodic timeout events, it make sense to apply changes for all nodese once).
         '''
         if self.vbssid_map.has_key(sta.addr):
             # this might not work...
             self.removeStation(sta.dpid, sta.addr)
             del self.vbssid_map[sta.addr]
             self.vbssid_pool.append(sta.vbssid)
-        log_fsm.debug("%012x : %s -> NONE" % (sta.addr, sta.state))
+        dpid = sta.dpid
         del self.stations[sta.addr]
+        if update_bssidmask:
+            self.update_bssidmask(dpid)
 
     def check_timeout_events(self):
         '''
@@ -351,7 +398,9 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         for sta in self.stations.values():
             if now - sta.last_seen > ASSOC_TIMEOUT and sta.state != "ASSOC":
                 _affected_aps.append(sta.dpid)
-                self.delete_station(sta)
+                log_fsm.debug("%012x : %s -> %s (ResTimeout)" % (sta.addr, sta.state, "NONE"))
+                self.delete_station(sta, update_bssidmask=False)
+
         _affected_aps = set(_affected_aps)
 
         # update the bssidmask of the affected APs
@@ -382,6 +431,18 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         '''
         #log.debug("%s %s %s %s" % (event.bssid, sta.vbssid, event.dpid, sta.dpid))
         return ((event.bssid == sta.vbssid) and (event.dpid == sta.dpid))
+
+    def is_valid_disassoc_request(self, event, sta):
+        '''
+        Checks if a sniffed disassoc request is for us. We accept at the first AP it came from.
+        '''
+        return (event.bssid == sta.vbssid)
+
+    def is_valid_deauth_request(self, event, sta):
+        '''
+        Checks if a sniffed deauth request is for us. We accept at the first AP it came from.
+        '''
+        return (event.bssid == sta.vbssid)
 
     def check_sta_switch(self, event, sta):
         '''
@@ -549,7 +610,6 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             sta.state = new_state
 
     def _handle_AssocRequest(self, event):
-        log.debug("Wifi Params for %x : %s" % (event.src_addr, event.params))
         if event.src_addr in self.stations.keys():
             sta = self.stations[event.src_addr]
         else:
@@ -567,6 +627,36 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             sta.state = new_state
         else:
             log.warning("invalid assoc request")
+
+    def _handle_DisassocRequest(self, event):
+        # we only care about stations already registered...
+        if event.src_addr in self.stations.keys():
+            sta = self.stations[event.src_addr]
+        else:
+            return
+
+        if self.is_valid_disassoc_request(event, sta):
+            old_state = sta.state
+            new_state = self.processFSM(sta.state, 'DisassocReq', sta)
+            log_fsm.debug("%012x : %s -> %s (DisassocReq, dpid:%012x)" %
+                          (event.src_addr, old_state, new_state, event.dpid))
+        else:
+            log.warning("invalid disassoc request")
+
+    def _handle_DeauthRequest(self, event):
+        # we only care about stations already registered...
+        if event.src_addr in self.stations.keys():
+            sta = self.stations[event.src_addr]
+        else:
+            return
+
+        if self.is_valid_deauth_request(event, sta):
+            old_state = sta.state
+            new_state = self.processFSM(sta.state, 'DeauthReq', sta)
+            log_fsm.debug("%012x : %s -> %s (DeauthReq, dpid:%012x)" %
+                          (event.src_addr, old_state, new_state, event.dpid))
+        else:
+            log.warning("invalid deauth request")
 
     def _handle_MoveStation(self, event):
         '''Moving a station from one AP to another.'''        
@@ -623,7 +713,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.raiseEvent(AddStation(dpid, addr, self.stations[addr].vbssid,self.stations[addr].aid,self.stations[addr].params))
         
     def removeStation(self, dpid, addr):
-        self.bh_switch._del_simple_flow(BH_UPLINK_PORT,mac_dst=EthAddr(mac_to_str(addr)))
+        if self.bh_switch:
+            self.bh_switch._del_simple_flow(BH_UPLINK_PORT,mac_dst=EthAddr(mac_to_str(addr)))
         self.raiseEvent(RemoveStation(dpid, addr))
 
     def update_bssidmask(self, dpid):        
