@@ -44,6 +44,7 @@ USE_BLACKLIST = 1
 GOOD_SNR_THRESHOLD = 35
 SNR_SWITCH_THRESHOLD = 10
 BACKHAUL_SWITCH = 0x010012e27831d8
+DEFAULT_HOST_TIMEOUT = 5 * 60
 
 class ProbeRequest(Event):
     '''Event raised by an AP when a probe request is received.
@@ -119,6 +120,17 @@ class DeauthRequest(Event):
         return "dpid:%012x | src_addr:%012x | bssid:%012x" % (self.dpid, self.src_addr, self.bssid)
 
 
+class HostTimeout(Event):
+    '''Event raised by the backhaul switch when the downlink flow
+    for a host timeouts.
+    @dst_addr : The address of the host.
+    @dpid : The dpid of the switch.
+    '''
+    def __init__(self, dpid, dst_addr):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.dst_addr = int(dst_addr.toStr(separator=''),16)
+
 class AddStation(Event):
     def __init__(self, dpid, src_addr, vbssid, aid, params):
         Event.__init__(self)
@@ -157,13 +169,15 @@ class Station(object):
         self.state = 'SNIFF'
         log_fsm.debug("%012x : NONE -> %s" % (self.addr, self.state))
 
-class BackhaulSwitch(object):
+class BackhaulSwitch(EventMixin):
     '''
     This should be a learning switch. NEC throws an error, 
     so hardcode stuff for now.
     '''
+    _eventMixin_events = set([HostTimeout])
+
     def __init__(self, connection, transparent):
-        #LearningSwitch.__init__(self, connection, transparent)
+        #LearningSwitch.__init__(self, connection, transparent, parent=None)
         self.connection = connection
         self.transparent = transparent
         self.connection.addListeners(self)
@@ -182,9 +196,21 @@ class BackhaulSwitch(object):
         self._set_simple_flow(1, [5], mac_dst=EthAddr("6466b378fe78")) # pi-ap2 @ G352
         self._set_simple_flow(1, [2,3,4,5], mac_dst=EthAddr("ffffffffffff")) # broadcast
 
-    def _set_simple_flow(self,port_in, ports_out, priority=1,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None):
+    def _handle_FlowRemoved(self, event):
+        '''
+        Flow has expired at the switch - forward event to the main brain
+        to see if the station is gone for good.
+        The only entries that can timeout are the downlink flows from the backhaul switch to the hosts.
+        All other flows are set with no timeout.
+        '''
+        if event.timeout:
+            addr = event.ofp.match.dl_dst
+            self.raiseEvent(HostTimeout(event.dpid, addr))
+
+    def _set_simple_flow(self,port_in, ports_out, priority=1,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None, idle_timeout=0):
         msg = of.ofp_flow_mod()
-        msg.idle_timeout=0
+        msg.idle_timeout=idle_timeout
+        msg.flags = of.OFPFF_SEND_FLOW_REM
         msg.priority = priority
         msg.match.in_port = port_in
         if (mac_dst):
@@ -525,6 +551,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         if (event.dpid == BACKHAUL_SWITCH):
             log.debug("Adding Backhaul Switch as learning switch")
             self.bh_switch = BackhaulSwitch(event.connection, self.transparent)
+            self.bh_switch.addListeners(self)
         else:
             wifi_ap = WifiAuthenticateSwitch(event.connection, self.transparent, self.is_blacklisted(event.dpid))
             wifi_ap.addListeners(self)
@@ -709,7 +736,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         * add a flow to the backhaul switch.
         * Add state to the AP.
         '''
-        self.bh_switch._set_simple_flow(BH_UPLINK_PORT, [self.bh_switch.topo[dpid]], mac_dst=EthAddr(mac_to_str(addr)))
+        self.bh_switch._set_simple_flow(BH_UPLINK_PORT, [self.bh_switch.topo[dpid]], 
+                                        mac_dst=EthAddr(mac_to_str(addr)), idle_timeout = DEFAULT_HOST_TIMEOUT)
         self.raiseEvent(AddStation(dpid, addr, self.stations[addr].vbssid,self.stations[addr].aid,self.stations[addr].params))
         
     def removeStation(self, dpid, addr):
@@ -723,6 +751,20 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             if sta.dpid == dpid:
                 bssidmask &= ~(sta.vbssid ^ BASE_HW_ADDRESS)
         self.raiseEvent(UpdateBssidmask(dpid, bssidmask))
+
+    def _handle_HostTimeout(self, event):
+        '''
+        Remove the state for this host.
+        '''
+        if event.dst_addr in self.stations.keys():
+            sta = self.stations[event.dst_addr]
+        else:
+            #nothing to do..
+            return
+        old_state = sta.state
+        new_state = self.processFSM(sta.state, 'HostTimeout', sta)
+        log_fsm.debug("%012x : %s -> %s (HostTimeout, dpid:%012x)" % 
+                      (event.dst_addr, old_state, new_state, event.dpid))
 
     def sniff_to_reserve(self, event):
         '''

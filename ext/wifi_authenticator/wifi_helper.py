@@ -349,6 +349,7 @@ class AssociationFSM(FSM):
         self.add_transition('AUTH','DisassocReq',self.delete_station, 'NONE')
         self.add_transition('ASSOC','DeauthReq',self.delete_station, 'NONE')        
         self.add_transition('AUTH','DeauthReq',self.delete_station, 'NONE')        
+        self.add_transition('ASSOC','HostTimeout',self.delete_station, 'NONE')
 
     def sniff_to_reserve(self, *args):
         pass
