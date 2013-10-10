@@ -6,6 +6,8 @@ import random
 from pox.core import core
 
 RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x02\x6c\x09\xa0\x00\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
+HT_CAPA_STR_BASE = "\x4c\x10\x1b\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+
 HOMENETS_OUI = "020000" # needs to be better defined.
 BEACON_INTERVAL = 1000
 DEFAULT_CHANNEL = 11
@@ -20,6 +22,25 @@ def mac_to_array(mac):
     a_mac = [int(x,16) for x in [s_mac[0:2], s_mac[2:4], s_mac[4:6],
                                  s_mac[6:8], s_mac[8:10], s_mac[10:]]]
     return a_mac
+
+def byte_array_to_hex_str(x):
+    return ''.join(['%02x' % n for n in x])
+
+def get_ht_capa_info(ht_capa_info_sta):
+    '''
+    Combine capabilities of AP and station.
+    based on hostapd_get_ht_capab .
+    '''
+    own_capa_info = 0x116c
+    cap = ht_capa_info_sta
+    cap &= own_capa_info | 0x030c
+    cap &= 0xfcff
+    return cap
+
+def get_ht_capa_str(sta_params):
+    ht_capa_bytes = (0x10, 0x4c, 0x1b,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                     0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
+    return ht_capa_bytes
 
 def generate_probe_response(vbssid, ssid, dst_addr, channel=DEFAULT_CHANNEL):
     '''
@@ -62,9 +83,9 @@ def generate_probe_response(vbssid, ssid, dst_addr, channel=DEFAULT_CHANNEL):
     baconFrame.set_ds_parameter_set(channel)
     baconFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24])
     baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x30\x48\x60\x6c")
-    baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.ERP_INFO,"\x00")
+    baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.ERP_INFO,"\x02")
     # HT Capabilities
-    ht_capa_str = "\x6c\x11\x1b\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    ht_capa_str = HT_CAPA_STR_BASE
     baconFrame._set_element(45,ht_capa_str)
     # HT info
     ht_info_ch_str = chr(channel)
@@ -130,7 +151,7 @@ def generate_auth_response(vbssid, dst_addr):
     packet_str = RADIOTAP_STR + resp_str
     return packet_str
 
-def generate_assoc_response(vbssid, dst_addr):
+def generate_assoc_response(vbssid, dst_addr, params, assoc_id= 0xc001, channel = DEFAULT_CHANNEL):
     '''
     Generates assoc response for the given vbssid,dst_addr tuple.
     '''
@@ -168,10 +189,22 @@ def generate_assoc_response(vbssid, dst_addr):
     assocFrame = dot11.Dot11ManagementAssociationResponse()
     assocFrame.set_capabilities(0x0421)
     assocFrame.set_status_code(0)
-    assocFrame.set_association_id(0xc001)
+    assocFrame.set_association_id(assoc_id)
     assocFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x18, 0x30, 0x48])
     assocFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x12\x24\x60\x6c")
     
+    # HT Capabilities
+    ht_capa_str = HT_CAPA_STR_BASE
+    assocFrame._set_element(45,ht_capa_str)
+    # HT info
+    ht_info_ch_str = chr(channel)
+    ht_info_str_rest = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    ht_info_str = ht_info_ch_str + ht_info_str_rest
+    assocFrame._set_element(61, ht_info_str)
+    # Extended Capabilities
+    ext_capab_str = "\x00\x00\x00\x00\x00\x00\x00\x40"
+    assocFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXTENDED_CAPABILITIES, ext_capab_str)
+
     mngtFrame.contains(assocFrame)
     frameCtrl.contains(mngtFrame)
     
@@ -216,9 +249,9 @@ def generate_beacon(vbssid, ssid, channel=DEFAULT_CHANNEL):
     baconFrame.set_ds_parameter_set(channel)
     baconFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24])
     baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x30\x48\x60\x6c")
-    baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.ERP_INFO,"\x00")
+    baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.ERP_INFO,"\x02")
     # HT Capabilities
-    ht_capa_str = "\x6c\x11\x1b\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    ht_capa_str = HT_CAPA_STR_BASE
     baconFrame._set_element(45,ht_capa_str)
     # HT info
     ht_info_ch_str = chr(channel)
@@ -238,24 +271,22 @@ def generate_beacon(vbssid, ssid, channel=DEFAULT_CHANNEL):
 
 class WifiStaParams(object):
     def __init__(self, buf=None):
-        rdtap = dot11.RadioTap(aBuffer=buf)
-        mgmt_frame = dot11.Dot11ManagementFrame(buf[20:])
-        log.debug(binascii.hexlify(mgmt_frame.get_source_address()))
+        mgmt_frame = dot11.Dot11ManagementFrame(buf[2:])
         assoc_req = dot11.Dot11ManagementAssociationRequest(mgmt_frame.get_frame_body())
-        log.debug(assoc_req.get_supported_rates(human_readable=True))
         self.addr = mgmt_frame.get_source_address()
         self.supp_rates = assoc_req.get_supported_rates()
-        self.ext_rates = assoc_req._get_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES)
         self.listen_interval = assoc_req.get_listen_interval()
         self.capabilities = assoc_req.get_capabilities()
         self.vendor_specific = assoc_req.get_vendor_specific()
-        log.debug(self.vendor_specific)
-        if (self.ext_rates):
-            _ext_rates=struct.unpack('%dB'%len(self.ext_rates),self.ext_rates)
-            log.debug(tuple(map(lambda x: 0.5*x, _ext_rates)))
+        self.ext_rates = assoc_req.get_ext_supported_rates()
+        self.ht_capabilities = assoc_req.get_ht_capabilities()
 
     def __str__(self):
-        return "src : %s" % binascii.hexlify(self.addr)
+        return "src : %s | supp_rates : %s | ext_rates : %s |" \
+            "list_interval : %d | capa : %s | ht-capabililites : %s" % (binascii.hexlify(self.addr),self.supp_rates,
+                                                self.ext_rates, self.listen_interval, self.capabilities,
+                                                self.ht_capabilities)
+                                                                                                 
 
 class UnknownTransitionError(Exception):
     pass

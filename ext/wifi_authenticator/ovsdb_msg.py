@@ -5,6 +5,7 @@ Adds/Removes Stations from Access Points.
 from pox.core import core
 from pox.messenger import *
 from pox.lib.recoco import Timer
+from wifi_helper import get_ht_capa_info, byte_array_to_hex_str
 
 log = core.getLogger("WifiOvsDB5")
 
@@ -12,7 +13,7 @@ G_RATES = [1,2,6,11,12,18,24,36,48,54]
 G_RATES_LEN = len(G_RATES)
 
 GET_DPID = {"method":"transact", "params":["Open_vSwitch", {"op":"select","table":"Bridge","where":[],"columns":["datapath_id"]}], "id":1}
-ADD_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiSta","row":{"addr":None,"vbssid":None}}],"id":1}
+ADD_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiSta","row":{"addr":None,"vbssid":None,"ht_capa":None,"sup_rates":["set",[]]}}],"id":1}
 DEL_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiSta","where":[]}],"id":2}
 UPDATE_BSSIDMASK = {"method":"transact", "params":["Wifi_vSwitch",{"op":"update","table":"WifiConfig","where":[],"row":{"bssidmask":None}}],"id":1}
 
@@ -73,7 +74,7 @@ class OvsDBBot(ChannelBot, EventMixin):
         log.debug("connection joined")
 
     def _handle_MessageReceived(self, event, msg):
-        #log.debug(msg)
+        log.debug(msg)
         if msg.has_key("method") and msg['method'] == 'echo':
             self.send_echo_reply(event.con, msg)
             if event.con not in self.connections.values():
@@ -98,10 +99,44 @@ class OvsDBBot(ChannelBot, EventMixin):
         con.send(GET_DPID)
 
     def _handle_AddStation(self, event):
-        add_json = ADD_STATION.copy()
+        params = event.params
+        sta_flags = 0
         _addr = "%012x" % event.src_addr
         _vbssid = "%012x" % event.vbssid
-        add_json["params"][1]["row"] = {"addr":_addr, "vbssid": _vbssid}
+        _sup_rates = byte_array_to_hex_str(params.supp_rates)
+        _ext_rates = byte_array_to_hex_str(params.ext_rates)
+        if params.ht_capabilities:
+            _ht_capa_info = get_ht_capa_info(params.ht_capabilities['ht_capab_info'])
+            _ht_capa_ampdu = params.ht_capabilities['a_mpdu']
+            _ht_capa_mcs = byte_array_to_hex_str(params.ht_capabilities['mcs'])
+            _ht_capa_ext = params.ht_capabilities['ext_capa']
+            _ht_capa_txbf = params.ht_capabilities['txbf']
+            _ht_capa_asel = params.ht_capabilities['asel']
+        else:
+            _ht_capa_info = 0
+            _ht_capa_ampdu = 0
+            _ht_capa_mcs = ""
+            _ht_capa_ext = 0
+            _ht_capa_txbf = 0
+            _ht_capa_asel = 0
+        add_json = ADD_STATION.copy()
+        add_json["params"][1]["row"] = {"addr":_addr,"vbssid":_vbssid,
+                                        "sup_rates":_sup_rates,
+                                        "ext_rates":_ext_rates,
+                                        "sta_aid":event.aid,
+                                        "sta_interval":params.listen_interval,
+                                        "sta_capabilities":params.capabilities,
+                                        "sta_flags":sta_flags,
+                                        "ht_capa_info":_ht_capa_info,
+                                        "ht_capa_ampdu":_ht_capa_ampdu,
+                                        "ht_capa_mcs":_ht_capa_mcs,
+                                        "ht_capa_ext":_ht_capa_ext,
+                                        "ht_capa_txbf":_ht_capa_txbf,
+                                        "ht_capa_asel":_ht_capa_asel}
+        #"capabilities":event.params.capabilities,
+        #                                "listen_interval":event.params.listen_interval,
+        #                                "rates":event.params.supp_rates,"ext_rates":event.params.ext_rates}
+        log.debug("ADD-STATION : %s" % add_json)
         log.debug("Adding Station %s to %x" % (_addr, event.dpid))
         if self.connections.has_key(event.dpid):
             con = self.connections[event.dpid]

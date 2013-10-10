@@ -78,6 +78,7 @@ class AssocRequest(Event):
     @src_addr : host's address
     @bssid : the bssid for the assocation
     @snr: the snr of the packet
+    @params : the Wifi params
     '''
     def __init__(self, dpid, src_addr, bssid, snr, params):
         Event.__init__(self)
@@ -88,11 +89,12 @@ class AssocRequest(Event):
         self.params = params
 
 class AddStation(Event):
-    def __init__(self, dpid, src_addr, vbssid, params):
+    def __init__(self, dpid, src_addr, vbssid, aid, params):
         Event.__init__(self)
         self.dpid = dpid
         self.src_addr = src_addr
         self.vbssid = vbssid
+        self.aid = aid
         self.params = params
 
 class RemoveStation(Event):
@@ -248,7 +250,7 @@ class WifiAuthenticateSwitch(EventMixin):
             #self.send_packet_out(AUTH_REPLY_STR)
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_ASSOC_REQ):
-            params = WifiStaParams(packet.raw)
+            params = WifiStaParams(packet.raw[rd_len:])
             self.raiseEvent(AssocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
 
         #if (ie.type == 0 and ie.subtype != 8):
@@ -293,6 +295,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.stations = {}
         self.timer = None
         self.set_timer()
+        self.next_aid = 1
         self.blacklisted_aps = []
         if USE_BLACKLIST == 1:
             self.blacklisted_aps = self.load_blacklisted_aps()
@@ -344,10 +347,19 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         @TODO : Probably generate related deauth/disassoc messages from here (?)
         '''
         now = time.time()
+        _affected_aps = []
         for sta in self.stations.values():
             if now - sta.last_seen > ASSOC_TIMEOUT and sta.state != "ASSOC":
+                _affected_aps.append(sta.dpid)
                 self.delete_station(sta)
-        
+        _affected_aps = set(_affected_aps)
+
+        # update the bssidmask of the affected APs
+        # group per AP to avoid multiple updates to the AP.
+        for ap in _affected_aps:
+            if ap:
+                self.update_bssidmask(ap)
+
     def is_valid_probe_request(self, event):
         '''
         Checks if a sniffed probe request is for us.
@@ -397,6 +409,9 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         '''
         cur_dpid_str = '%012x' % sta.dpid
         cur_dpid = sta.dpid
+        # Monitor IB should know about this dpid, but sometimes is out-of-sync...
+        if cur_dpid_str not in sta_summary.keys():
+            return
         cur_snr = sta_summary[cur_dpid_str][0]
         max_dpid, max_snr = max([(int(dpid,16),sta_summary[dpid][0]) for dpid in sta_summary.keys()], key=lambda sta:sta[1])
         
@@ -407,6 +422,19 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         if max_snr - cur_snr > SNR_SWITCH_THRESHOLD:
             log_mob.debug("Triggering Change for station %012x (%012x -> %012x)" % (sta.addr, cur_dpid, max_dpid))
             self.move_station(sta.addr, cur_dpid, max_dpid)
+
+    def get_next_aid(self):
+        '''
+        Gives the next association-id (aid). Rotate among available aids.
+        @TODO : ensure that there are no duplicate AIDs at the same AP.
+        (probably need to maintain unique AID for each station...)
+        '''
+        cur_id = self.next_aid
+        if self.next_aid == 0xffff:
+            self.next_aid = 1
+        else:
+            self.next_aid += 1
+        return cur_id
                         
     def get_vbssid_for_host(self, src_addr):
         '''
@@ -521,6 +549,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             sta.state = new_state
 
     def _handle_AssocRequest(self, event):
+        log.debug("Wifi Params for %x : %s" % (event.src_addr, event.params))
         if event.src_addr in self.stations.keys():
             sta = self.stations[event.src_addr]
         else:
@@ -530,6 +559,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.check_sta_switch(event, sta)
 
         if self.is_valid_assoc_request(event, sta):
+            sta.params = event.params
             sta.last_seen = time.time()
             new_state = self.processFSM(sta.state, 'AssocReq', event)
             log_fsm.debug("%012x : %s -> %s (AssocReq, vbssid:%012x dpid:%012x)" % 
@@ -590,7 +620,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         * Add state to the AP.
         '''
         self.bh_switch._set_simple_flow(BH_UPLINK_PORT, [self.bh_switch.topo[dpid]], mac_dst=EthAddr(mac_to_str(addr)))
-        self.raiseEvent(AddStation(dpid, addr, self.stations[addr].vbssid,{}))
+        self.raiseEvent(AddStation(dpid, addr, self.stations[addr].vbssid,self.stations[addr].aid,self.stations[addr].params))
         
     def removeStation(self, dpid, addr):
         self.bh_switch._del_simple_flow(BH_UPLINK_PORT,mac_dst=EthAddr(mac_to_str(addr)))
@@ -615,6 +645,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.stations[addr].vbssid = self.get_vbssid_for_host(addr)
         self.stations[addr].dpid = dpid
         self.stations[addr].last_snr = event.snr
+        self.stations[addr].aid = self.get_next_aid()
         self.update_bssidmask(dpid)
         self.sendProbeResponse(event)
 
@@ -665,7 +696,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
     def sendAssocResponse(self, event):
         log.debug("Sending Assoc Response to %x" % event.src_addr)
         vbssid = self.stations[event.src_addr].vbssid
-        packet_str = generate_assoc_response(vbssid, event.src_addr)
+        packet_str = generate_assoc_response(vbssid, event.src_addr, event.params)
         self.aps[event.dpid].send_packet_out(packet_str)
 
 def launch( transparent=False):
