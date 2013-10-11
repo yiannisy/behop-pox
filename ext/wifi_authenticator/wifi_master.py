@@ -40,11 +40,19 @@ BH_STA_PRIO = 1
 ASSOC_TIMEOUT = 5
 VBSSID_RANGE_MIN = 20
 VBSSID_RANGE_MAX = 40
-USE_BLACKLIST = 1
+
 GOOD_SNR_THRESHOLD = 35
 SNR_SWITCH_THRESHOLD = 10
 BACKHAUL_SWITCH = 0x010012e27831d8
 DEFAULT_HOST_TIMEOUT = 5 * 60
+
+# Blacklist, Whitelist
+USE_BLACKLIST = 1
+USE_WHITELIST = 1
+BLACKLIST_FNAME = 'ext/wifi_authenticator/ap_blacklist.txt'
+WHITELIST_FNAME = 'ext/wifi_authenticator/sta_whitelist.txt'
+BW_LIST_UPDATE_INTERVAL= 5*60
+
 
 class ProbeRequest(Event):
     '''Event raised by an AP when a probe request is received.
@@ -237,11 +245,12 @@ class BackhaulSwitch(EventMixin):
 class WifiAuthenticateSwitch(EventMixin):
     _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, AddStation, RemoveStation, DeauthRequest, DisassocRequest])
     
-    def __init__(self, connection, transparent, is_blacklisted = False):
+    def __init__(self, connection, transparent, is_blacklisted = False, whitelisted_stas = None):
         EventMixin.__init__(self)
         self.connection = connection
         self.transparent = transparent
         self.is_blacklisted = is_blacklisted
+        self.whitelisted_stas = whitelisted_stas
         self.clients = []
         
         connection.addListeners(self)
@@ -255,6 +264,11 @@ class WifiAuthenticateSwitch(EventMixin):
         self._set_simple_flow(WLAN_PORT,WAN_PORT)
         self._set_simple_flow(WAN_PORT,of.OFPP_NORMAL,priority=2,ip_dst=connection.sock.getpeername()[0])
         self._set_simple_flow(of.OFPP_LOCAL,of.OFPP_NORMAL, priority=2,ip_src=connection.sock.getpeername()[0])
+
+    def is_whitelisted(self, addr):
+        if addr in self.whitelisted_stas:
+            return True
+        return False
                               
     def _set_simple_flow(self,port_in,port_out, priority=1,ip_src=None, ip_dst=None,queue_id=None):
         msg = of.ofp_flow_mod()
@@ -297,6 +311,12 @@ class WifiAuthenticateSwitch(EventMixin):
         
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_BEACON):
             return
+
+        # react only to messages by whitelisted stations.
+        if (ie.type == dpkt.ieee80211.MGMT_TYPE):
+            src_addr = int(binascii.hexlify(ie.mgmt.src), 16)
+            if  (not self.is_whitelisted(src_addr)):
+                return
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_PROBE_REQ):
             #log.debug("%s -> %s (%s)" % (binascii.hexlify(ie.mgmt.src), ie.ssid, ie.ssid.data))
@@ -361,15 +381,19 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.vbssid_map = {}
         self.stations = {}
         self.timer = None
+        self.bw_timer = None
         self.set_timer()
         self.next_aid = 1
         self.blacklisted_aps = []
+        self.whitelisted_stas = []
         if USE_BLACKLIST == 1:
             self.blacklisted_aps = self.load_blacklisted_aps()
+        if USE_WHITELIST == 1:
+            self.whitelisted_stas = self.load_whitelisted_stas()
 
     def load_blacklisted_aps(self):
         b_aps = []
-        f = open('ext/wifi_authenticator/ap_blacklist.txt','r')
+        f = open(BLACKLIST_FNAME,'r')
         for line in f.readlines():
             if line.startswith('#'):
                 continue
@@ -377,13 +401,34 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         f.close()
         log.info("Loading List of Blacklisted APs:")
         for ap in b_aps:
-            log.info("%x" % ap)
+            log.info("%012x" % ap)
         return b_aps
+
+    def load_whitelisted_stas(self):
+        w_stas = []
+        f = open(WHITELIST_FNAME,'r')
+        for line in f.readlines():
+            if line.startswith('#'):
+                continue
+            w_stas.append(int(line.rstrip(), 16))
+        f.close()
+        log.info("Updated List of Whitelisted STAs:")
+        for sta in w_stas:
+            log.info("%012x" % sta)
+        return w_stas
 
     def is_blacklisted(self, dpid):
         if dpid in self.blacklisted_aps:
             return True
         return False
+
+    def bw_update(self):
+        self.whitelisted_stas = self.load_whitelisted_stas()
+        self.blacklisted_aps = self.load_blacklisted_aps()
+        # apply the new black/white-list to the Wifi APs.
+        for dpid,ap in self.aps.items():
+            ap.whitelisted_stas = self.whitelisted_stas 
+            ap.is_blacklisted = self.is_blacklisted(dpid)                    
 
     def set_timer(self):
         '''
@@ -391,6 +436,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         '''
         if self.timer : self.timer.cancel()
         self.timer = Timer(5, self.check_timeout_events, recurring=True)
+        if self.bw_timer : self.bw_timer.cancel()
+        self.bw_timer = Timer(BW_LIST_UPDATE_INTERVAL, self.bw_update, recurring=True)
 
     def delete_station(self, sta, update_bssidmask=True):
         '''
@@ -553,7 +600,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             self.bh_switch = BackhaulSwitch(event.connection, self.transparent)
             self.bh_switch.addListeners(self)
         else:
-            wifi_ap = WifiAuthenticateSwitch(event.connection, self.transparent, self.is_blacklisted(event.dpid))
+            wifi_ap = WifiAuthenticateSwitch(event.connection, self.transparent, self.is_blacklisted(event.dpid), self.whitelisted_stas)
             wifi_ap.addListeners(self)
             self.aps[event.dpid] = wifi_ap
 
