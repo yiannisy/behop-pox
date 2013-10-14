@@ -17,42 +17,13 @@ from wifi_helper import *
 
 from dpkt import NeedData
 from pox.lib.addresses import EthAddr
-
+from behop_config import *
 
 import hashlib
 
 log = core.getLogger("WifiMessenger")
 log_fsm = core.getLogger("WifiFSM")
 log_mob = core.getLogger("WifiMobility")
-
-# AP variables
-WAN_PORT  = 1 # ethernet port
-MON_PORT  = 2 # monitor port where we expect mgmt packets from.
-WLAN_PORT = 3 # wireless port
-SERVING_SSID = 'malakas'
-BASE_HW_ADDRESS = 0x020000000000
-
-# BH parameters
-BH_UPLINK_PORT = 1
-BH_AP_PRIO = 1
-BH_STA_PRIO = 1
-
-ASSOC_TIMEOUT = 5
-VBSSID_RANGE_MIN = 20
-VBSSID_RANGE_MAX = 40
-
-GOOD_SNR_THRESHOLD = 35
-SNR_SWITCH_THRESHOLD = 10
-BACKHAUL_SWITCH = 0x010012e27831d8
-DEFAULT_HOST_TIMEOUT = 5 * 60
-
-# Blacklist, Whitelist
-USE_BLACKLIST = 1
-USE_WHITELIST = 1
-BLACKLIST_FNAME = 'ext/wifi_authenticator/ap_blacklist.txt'
-WHITELIST_FNAME = 'ext/wifi_authenticator/sta_whitelist.txt'
-BW_LIST_UPDATE_INTERVAL= 5*60
-
 
 class ProbeRequest(Event):
     '''Event raised by an AP when a probe request is received.
@@ -189,20 +160,13 @@ class BackhaulSwitch(EventMixin):
         self.connection = connection
         self.transparent = transparent
         self.connection.addListeners(self)
-        #simple switch hack for now
-        # self._set_simple_flow(1,4)
+        self.topo = BEHOP_TOPO
         # all ports should go to the uplink to start with.
-        self._set_simple_flow(4,[1])
-        self._set_simple_flow(5,[1])
-        self._set_simple_flow(3,[1])
-        self._set_simple_flow(2,[1])
-        # setup flows for in-band controls to APs)
-        self.topo = { 0xf81a6752fd7e:2, 0xf81a67531193:3, 0x6466b393fa74:4, 0x6466b378fe78:5 }
-        self._set_simple_flow(1, [2], mac_dst=EthAddr("f81a6752fd7e")) # pi-ap4 @ G342
-        self._set_simple_flow(1, [3], mac_dst=EthAddr("f81a67531193")) # pi-ap5 @ G338
-        self._set_simple_flow(1, [4], mac_dst=EthAddr("6466b393fa74")) # pi-ap8 @ G352
-        self._set_simple_flow(1, [5], mac_dst=EthAddr("6466b378fe78")) # pi-ap2 @ G352
-        self._set_simple_flow(1, [2,3,4,5], mac_dst=EthAddr("ffffffffffff")) # broadcast
+        for ap, ap_port in self.topo.items():
+            self._set_simple_flow(ap_port, [BEHOP_UPLINK])
+            self._set_simple_flow(BEHOP_UPLINK, [ap_port], mac_dst=EthAddr("%012x" % ap))
+        # add flow for broadcast
+        self._set_simple_flow(BEHOP_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"))
 
     def _handle_FlowRemoved(self, event):
         '''
@@ -390,6 +354,9 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             self.blacklisted_aps = self.load_blacklisted_aps()
         if USE_WHITELIST == 1:
             self.whitelisted_stas = self.load_whitelisted_stas()
+
+    def load_topology(self):
+        f = open(TOPOLOGY_FNAME,'r')
 
     def load_blacklisted_aps(self):
         b_aps = []
