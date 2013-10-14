@@ -1,1 +1,1 @@
-./pox.py --verbose log --format="%(asctime)s|%(module)s:%(levelname)s| %(message)s" openflow.of_01 --port=6635 messenger messenger.tcp_transport --tcp_port=9935 wifi_authenticator.wifi_master wifi_authenticator.ovsdb_msg 2> pox.log
+./pox.py --verbose log --format="%(asctime)s|%(name)s:%(levelname)s| %(message)s" openflow.of_01 --port=6635 messenger messenger.tcp_transport --tcp_port=9935 wifi_authenticator.wifi_master wifi_authenticator.ovsdb_msg 2> pox.log
