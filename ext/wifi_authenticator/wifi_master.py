@@ -163,10 +163,10 @@ class BackhaulSwitch(EventMixin):
         self.topo = BEHOP_TOPO
         # all ports should go to the uplink to start with.
         for ap, ap_port in self.topo.items():
-            self._set_simple_flow(ap_port, [BEHOP_UPLINK])
-            self._set_simple_flow(BEHOP_UPLINK, [ap_port], mac_dst=EthAddr("%012x" % ap))
+            self._set_simple_flow(ap_port, [BACKHAUL_UPLINK])
+            self._set_simple_flow(BACKHAUL_UPLINK, [ap_port], mac_dst=EthAddr("%012x" % ap))
         # add flow for broadcast
-        self._set_simple_flow(BEHOP_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"))
+        self._set_simple_flow(BACKHAUL_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"))
 
     def _handle_FlowRemoved(self, event):
         '''
@@ -750,13 +750,13 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         * add a flow to the backhaul switch.
         * Add state to the AP.
         '''
-        self.bh_switch._set_simple_flow(BH_UPLINK_PORT, [self.bh_switch.topo[dpid]], 
+        self.bh_switch._set_simple_flow(BACKHAUL_UPLINK, [self.bh_switch.topo[dpid]], 
                                         mac_dst=EthAddr(mac_to_str(addr)), idle_timeout = DEFAULT_HOST_TIMEOUT)
         self.raiseEvent(AddStation(dpid, addr, self.stations[addr].vbssid,self.stations[addr].aid,self.stations[addr].params))
         
     def removeStation(self, dpid, addr):
         if self.bh_switch:
-            self.bh_switch._del_simple_flow(BH_UPLINK_PORT,mac_dst=EthAddr(mac_to_str(addr)))
+            self.bh_switch._del_simple_flow(BACKHAUL_UPLINK,mac_dst=EthAddr(mac_to_str(addr)))
         self.raiseEvent(RemoveStation(dpid, addr))
 
     def update_bssidmask(self, dpid):        
