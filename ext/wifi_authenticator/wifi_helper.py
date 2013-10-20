@@ -1,4 +1,5 @@
 import impacket.dot11 as dot11
+from impacket.ImpactDecoder import RadioTapDecoder
 import dpkt
 import binascii
 import struct
@@ -6,7 +7,7 @@ import random
 from pox.core import core
 
 RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x02\x6c\x09\xa0\x00\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
-HT_CAPA_STR_BASE = "\x4c\x10\x1b\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+HT_CAPA_STR_BASE = "\x6c\x11\x1b\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 
 HOMENETS_OUI = "020000" # needs to be better defined.
 BEACON_INTERVAL = 1000
@@ -31,10 +32,16 @@ def get_ht_capa_info(ht_capa_info_sta):
     Combine capabilities of AP and station.
     based on hostapd_get_ht_capab .
     '''
+    print "host came with capa : %x" % ht_capa_info_sta
     own_capa_info = 0x116c
     cap = ht_capa_info_sta
     cap &= own_capa_info | 0x030c
     cap &= 0xfcff
+    # awful way to get little-endian here (probably need to move this to sta-manager)
+    _cap_1 = cap/256
+    _cap_2 = cap % 256
+    cap = _cap_2*256 + _cap_1
+    print "host installed with capa : %x" % cap
     return cap
 
 def get_ht_capa_str(sta_params):
@@ -277,6 +284,49 @@ def generate_beacon(vbssid, ssid, channel=DEFAULT_CHANNEL):
 
     resp_str = frameCtrl.get_packet()
     packet_str = RADIOTAP_STR + resp_str
+    return packet_str
+
+def generate_action_response(vbssid, dst_addr):
+    '''
+    Generates action response for BlockAck for the given (vbssid,dst_addr) tuple.
+    '''
+    rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
+        
+    dst = mac_to_array(dst_addr)
+    bssid = mac_to_array(vbssid)
+    
+    # Frame Control
+    frameCtrl = dot11.Dot11(FCS_at_end = False)
+    frameCtrl.set_version(0)
+    frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_ACTION)
+    # Frame Control Flags
+    frameCtrl.set_fromDS(0)
+    frameCtrl.set_toDS(0)
+    frameCtrl.set_moreFrag(0)
+    frameCtrl.set_retry(0)
+    frameCtrl.set_powerManagement(0)
+    frameCtrl.set_moreData(0)
+    frameCtrl.set_protectedFrame(0)
+    frameCtrl.set_order(0)
+    
+    # Management Frame
+    sequence = random.randint(0, 4096)
+    mngtFrame = dot11.Dot11ManagementFrame()
+    mngtFrame.set_duration(0)
+    mngtFrame.set_destination_address(dst)
+    mngtFrame.set_source_address(bssid)
+    mngtFrame.set_bssid(bssid)
+    mngtFrame.set_fragment_number(0)
+    mngtFrame.set_sequence_number(sequence)
+    
+    frameCtrl.contains(mngtFrame)
+    
+    block_ack_str = "\x03\x01\x08\x00\x00\x02\x10\x00\x00"
+
+    resp_str = frameCtrl.get_packet()
+    #log.debug("length of pkt : %d" % len(resp_str))
+    
+    packet_str = RADIOTAP_STR + resp_str + block_ack_str
     return packet_str
 
 class WifiStaParams(object):

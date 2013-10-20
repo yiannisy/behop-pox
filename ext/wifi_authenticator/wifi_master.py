@@ -98,6 +98,17 @@ class DeauthRequest(Event):
     def __str__(self):
         return "dpid:%012x | src_addr:%012x | bssid:%012x" % (self.dpid, self.src_addr, self.bssid)
 
+class ActionEvent(Event):
+    '''Event raised by an AP when it receives an action packet.
+    @dpid : the AP reporting the request.
+    @src_addr : host's address
+    '''
+    def __init__(self, dpid, src_addr, bssid):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.src_addr = src_addr
+        self.bssid = bssid
+
 
 class HostTimeout(Event):
     '''Event raised by the backhaul switch when the downlink flow
@@ -164,9 +175,10 @@ class BackhaulSwitch(EventMixin):
         # all ports should go to the uplink to start with.
         for ap, ap_port in self.topo.items():
             self._set_simple_flow(ap_port, [BACKHAUL_UPLINK])
-            self._set_simple_flow(BACKHAUL_UPLINK, [ap_port], mac_dst=EthAddr("%012x" % ap))
+            self._set_simple_flow(BACKHAUL_UPLINK, [ap_port], mac_dst=EthAddr("%012x" % ap), priority=2)
         # add flow for broadcast
-        self._set_simple_flow(BACKHAUL_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"))
+        self._set_simple_flow(BACKHAUL_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
+        self._set_simple_flow(BACKHAUL_UPLINK, [], priority=1)
 
     def _handle_FlowRemoved(self, event):
         '''
@@ -207,7 +219,8 @@ class BackhaulSwitch(EventMixin):
         self.connection.send(msg)
 
 class WifiAuthenticateSwitch(EventMixin):
-    _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, AddStation, RemoveStation, DeauthRequest, DisassocRequest])
+    _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, AddStation, RemoveStation, 
+                              DeauthRequest, DisassocRequest, ActionEvent])
     
     def __init__(self, connection, transparent, is_blacklisted = False, whitelisted_stas = None):
         EventMixin.__init__(self)
@@ -270,6 +283,24 @@ class WifiAuthenticateSwitch(EventMixin):
         except NeedData:
             #log.debug("Cannot debug packet...")
             return
+
+        # try to get an impacket version of the packet.
+        try:
+            im_pkt = dot11.Dot11(aBuffer=packet.raw[rd_len:], FCS_at_end=False)
+        except Exception as e:
+            log.error("Impacket conversion failed.")
+            log.error(e)
+            return
+
+        if (im_pkt.get_type_n_subtype() == dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_ACTION):
+            radiotap_decoder = RadioTapDecoder()
+            im_radiotap = radiotap_decoder.decode(packet.raw)
+            _dot11 =  im_radiotap.child()
+            mgmt_base = _dot11.child()
+            addr = int(byte_array_to_hex_str(mgmt_base.get_source_address()),16)
+            bssid = int(byte_array_to_hex_str(mgmt_base.get_bssid()),16)
+            log.debug("Got action event from %x : %x %x" % (event.dpid, addr,bssid))
+            #self.raiseEvent(ActionEvent(event.dpid, addr, bssid))
 
         #log.debug("received packet %x %x from %s" % (ie.type, ie.subtype, binascii.hexlify(ie.mgmt.src)))
         
@@ -483,6 +514,13 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         Checks if a sniffed deauth request is for us. We accept at the first AP it came from.
         '''
         return (event.bssid == sta.vbssid)
+
+    def is_valid_action_event(self, event, sta):
+        '''
+        Checks if the station is associated, the request comes from the assigned AP,
+        and is destined to the sta's vbssid.
+        '''
+        return ((event.dpid == sta.dpid) and (event.bssid == sta.vbssid) and (sta.state == 'ASSOC'))
 
     def check_sta_switch(self, event, sta):
         '''
@@ -699,6 +737,16 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         else:
             log.warning("invalid deauth request")
 
+    def _handle_ActionEvent(self, event):
+        log.debug("handling action")
+        if event.src_addr in self.stations.keys():
+            sta = self.stations[event.src_addr]
+        else:
+            return
+        if self.is_valid_action_event(event, sta):
+            log.debug("sending action")
+            self.sendActionResponse(event)
+
     def _handle_MoveStation(self, event):
         '''Moving a station from one AP to another.'''        
         log_mob.debug("Received Request to move station %x from %x to %x" % (event.addr, event.old_dpid,
@@ -750,7 +798,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         * add a flow to the backhaul switch.
         * Add state to the AP.
         '''
-        self.bh_switch._set_simple_flow(BACKHAUL_UPLINK, [self.bh_switch.topo[dpid]], 
+        self.bh_switch._set_simple_flow(BACKHAUL_UPLINK, [self.bh_switch.topo[dpid]], priority=2,
                                         mac_dst=EthAddr(mac_to_str(addr)), idle_timeout = DEFAULT_HOST_TIMEOUT)
         self.raiseEvent(AddStation(dpid, addr, self.stations[addr].vbssid,self.stations[addr].aid,self.stations[addr].params))
         
@@ -844,6 +892,12 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         log.debug("Sending Assoc Response to %x" % event.src_addr)
         vbssid = self.stations[event.src_addr].vbssid
         packet_str = generate_assoc_response(vbssid, event.src_addr, event.params)
+        self.aps[event.dpid].send_packet_out(packet_str)
+
+    def sendActionResponse(self, event):
+        log.debug("Sending Action Response to %x" % event.src_addr)
+        vbssid = self.stations[event.src_addr].vbssid
+        packet_str = generate_action_response(vbssid, event.src_addr)
         self.aps[event.dpid].send_packet_out(packet_str)
 
 def launch( transparent=False):
