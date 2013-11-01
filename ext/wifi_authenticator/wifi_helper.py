@@ -163,7 +163,7 @@ def generate_auth_response(vbssid, dst_addr):
     packet_str = RADIOTAP_STR + resp_str
     return packet_str
 
-def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, assoc_id= 0xc001):
+def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, assoc_id):
     '''
     Generates assoc response for the given vbssid,dst_addr tuple.
     '''
@@ -201,7 +201,8 @@ def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, as
     assocFrame = dot11.Dot11ManagementAssociationResponse()
     assocFrame.set_capabilities(0x0421)
     assocFrame.set_status_code(0)
-    assocFrame.set_association_id(assoc_id)
+    # bits 14-15 need to be set on the response, not the kernel.
+    assocFrame.set_association_id(assoc_id | 0xc000) 
     assocFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x18, 0x30, 0x48])
     assocFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x12\x24\x60\x6c")
     

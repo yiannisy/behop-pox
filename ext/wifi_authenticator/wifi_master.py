@@ -420,7 +420,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.timer = None
         self.bw_timer = None
         self.set_timer()
-        self.next_aid = 1
+        self.next_aid = 0x0001
         self.blacklisted_aps = []
         self.whitelisted_stas = []
         if USE_BLACKLIST == 1:
@@ -622,8 +622,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         (probably need to maintain unique AID for each station...)
         '''
         cur_id = self.next_aid
-        if self.next_aid == 0xffff:
-            self.next_aid = 1
+        if self.next_aid == 0x3fff:
+            self.next_aid = 0x0001
         else:
             self.next_aid += 1
         return cur_id
@@ -950,10 +950,11 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
 
     def sendAssocResponse(self, event):
         log.debug("Sending Assoc Response to %x" % event.src_addr)
-        vbssid = self.stations[event.src_addr].vbssid
+        sta = self.stations[event.src_addr]
         wifi_ap = self.aps[event.dpid]
+        vbssid = sta.vbssid
         packet_str = generate_assoc_response(vbssid, event.src_addr, event.params, wifi_ap.current_channel,
-                                             wifi_ap.capabilities, wifi_ap.ht_capabilities_info)
+                                             wifi_ap.capabilities, wifi_ap.ht_capabilities_info,sta.aid)
         self.aps[event.dpid].send_packet_out(packet_str)
         
     def sendActionResponse(self, event):
