@@ -5,6 +5,7 @@ import binascii
 import struct
 import random
 from pox.core import core
+from behop_config import *
 
 RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x02\x6c\x09\xa0\x00\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
 HT_CAPA_STR_BASE = "\x6c\x11\x1b\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -96,8 +97,12 @@ def generate_probe_response(vbssid, ssid, dst_addr, channel, capa, ht_capa):
     baconFrame._set_element(45,ht_capa_str)
     # HT info
     ht_info_ch_str = chr(channel)
-    ht_info_str_rest = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-    ht_info_str = ht_info_ch_str + ht_info_str_rest
+    if channel < WLAN_2_GHZ_CHANNEL_MAX:
+        ht_info_oper_str = chr(0)
+    else:
+        ht_info_oper_str = chr(5)
+    ht_info_str_rest = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    ht_info_str = ht_info_ch_str + ht_info_oper_str + ht_info_str_rest
     baconFrame._set_element(61, ht_info_str)
     # Extended Capabilities
     ext_capab_str = "\x00\x00\x00\x00\x00\x00\x00\x40"
@@ -211,8 +216,12 @@ def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, as
     assocFrame._set_element(45,ht_capa_str)
     # HT info
     ht_info_ch_str = chr(channel)
-    ht_info_str_rest = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-    ht_info_str = ht_info_ch_str + ht_info_str_rest
+    if channel < WLAN_2_GHZ_CHANNEL_MAX:
+        ht_info_oper_str = chr(0)
+    else:
+        ht_info_oper_str = chr(5)
+    ht_info_str_rest = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    ht_info_str = ht_info_ch_str + ht_info_oper_str + ht_info_str_rest
     assocFrame._set_element(61, ht_info_str)
     # Extended Capabilities
     ext_capab_str = "\x00\x00\x00\x00\x00\x00\x00\x40"
@@ -273,8 +282,12 @@ def generate_beacon(vbssid, ssid, channel, capa, ht_capa):
     baconFrame._set_element(45,ht_capa_str)
     # HT info
     ht_info_ch_str = chr(channel)
-    ht_info_str_rest = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-    ht_info_str = ht_info_ch_str + ht_info_str_rest
+    if channel < WLAN_2_GHZ_CHANNEL_MAX:
+        ht_info_oper_str = chr(0)
+    else:
+        ht_info_oper_str = chr(5)
+    ht_info_str_rest = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    ht_info_str = ht_info_ch_str + ht_info_oper_str + ht_info_str_rest
     baconFrame._set_element(61, ht_info_str)
     # Extended Capabilities
     ext_capab_str = "\x00\x00\x00\x00\x00\x00\x00\x40"
