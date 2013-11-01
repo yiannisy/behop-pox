@@ -28,16 +28,15 @@ def mac_to_array(mac):
 def byte_array_to_hex_str(x):
     return ''.join(['%02x' % n for n in x])
 
-def get_ht_capa_info(ht_capa_info_sta):
+def get_ht_capa_info(ht_capa_info_sta, own_capa_info):
     '''
     Combine capabilities of AP and station.
     based on hostapd_get_ht_capab .
     '''
     print "host came with capa : %x" % ht_capa_info_sta
-    own_capa_info = 0x116c
     cap = ht_capa_info_sta
     cap &= own_capa_info | 0x030c
-    cap &= 0xfcff
+    #cap &= 0xfcff
     # awful way to get little-endian here (probably need to move this to sta-manager)
     _cap_1 = cap/256
     _cap_2 = cap % 256

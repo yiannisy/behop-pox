@@ -122,7 +122,7 @@ class HostTimeout(Event):
         self.dst_addr = int(dst_addr.toStr(separator=''),16)
 
 class AddStation(Event):
-    def __init__(self, dpid, intf, src_addr, vbssid, aid, params):
+    def __init__(self, dpid, intf, src_addr, vbssid, aid, params, ht_capa):
         Event.__init__(self)
         self.dpid = dpid
         self.intf = intf
@@ -130,6 +130,7 @@ class AddStation(Event):
         self.vbssid = vbssid
         self.aid = aid
         self.params = params
+        self.ht_capabilities_info = ht_capa
 
 class RemoveStation(Event):
     def __init__(self, dpid, intf, src_addr):
@@ -855,7 +856,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         if self.bh_switch:
             self.bh_switch._set_simple_flow(BACKHAUL_UPLINK, [self.bh_switch.topo[dpid]], priority=2,
                                             mac_dst=EthAddr(mac_to_str(addr)), idle_timeout = DEFAULT_HOST_TIMEOUT)
-        self.raiseEvent(AddStation(dpid, wifi_ap.intf, addr, self.stations[addr].vbssid,self.stations[addr].aid,self.stations[addr].params))
+        self.raiseEvent(AddStation(dpid, wifi_ap.intf, addr, self.stations[addr].vbssid,self.stations[addr].aid,self.stations[addr].params, wifi_ap.ht_capabilities_info))
         
     def removeStation(self, dpid, addr):
         wifi_ap = self.aps[dpid]

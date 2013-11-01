@@ -109,7 +109,7 @@ class OvsDBBot(ChannelBot, EventMixin):
         else:
             _ext_rates = "0000"
         if params.ht_capabilities:
-            _ht_capa_info = get_ht_capa_info(params.ht_capabilities['ht_capab_info'])
+            _ht_capa_info = get_ht_capa_info(params.ht_capabilities['ht_capab_info'], event.ht_capabilities_info)
             _ht_capa_ampdu = params.ht_capabilities['a_mpdu']
             _ht_capa_mcs = byte_array_to_hex_str(params.ht_capabilities['mcs'])
             _ht_capa_ext = params.ht_capabilities['ext_capa']
