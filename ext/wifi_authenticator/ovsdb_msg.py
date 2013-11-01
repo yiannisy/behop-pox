@@ -104,7 +104,10 @@ class OvsDBBot(ChannelBot, EventMixin):
         _addr = "%012x" % event.src_addr
         _vbssid = "%012x" % event.vbssid
         _sup_rates = byte_array_to_hex_str(params.supp_rates)
-        _ext_rates = byte_array_to_hex_str(params.ext_rates)
+        if params.ext_rates:
+            _ext_rates = byte_array_to_hex_str(params.ext_rates)
+        else:
+            _ext_rates = "0000"
         if params.ht_capabilities:
             _ht_capa_info = get_ht_capa_info(params.ht_capabilities['ht_capab_info'])
             _ht_capa_ampdu = params.ht_capabilities['a_mpdu']
