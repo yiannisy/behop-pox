@@ -941,7 +941,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         wifi_ap = self.aps[event.dpid]
         ssid = SERVING_SSID
 
-        packet_str = generate_auth_response(vbssid, event.src_addr)
+        packet_str = generate_auth_response(vbssid, event.src_addr, wifi_ap.current_channel)
         self.aps[event.dpid].send_packet_out(packet_str)
 
         # Some drivers also wait to hear a beacon before they move from authentication to association...

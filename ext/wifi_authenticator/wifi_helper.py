@@ -7,7 +7,6 @@ import random
 from pox.core import core
 from behop_config import *
 
-#RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x02\x6c\x09\xa0\x00\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
 RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x0c\x3c\x14\x40\x01\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
 HT_CAPA_STR_BASE = "\x1b\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 
@@ -49,11 +48,21 @@ def generate_probe_response(vbssid, ssid, dst_addr, channel, capa, ht_capa):
     '''
     Generates probe response for the given (vbssid, ssid, dst_addr) tuple.
     '''
-    rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
-        
     dst = mac_to_array(dst_addr)
     bssid = mac_to_array(vbssid)
-    
+
+    # Radiotap Header
+    radioCtrl = dot11.RadioTap(aBuffer = RADIOTAP_STR)
+    if channel < WLAN_2_GHZ_CHANNEL_MAX:
+        channel_flags = 0x000a
+        rate = 0x02
+    else:
+        channel_flags = 0x0140
+        rate = 0x0c
+    freq = CHANNEL_FREQS[channel]
+    radioCtrl.set_rate(rate)
+    radioCtrl.set_channel(freq,channel_flags)
+
     # Frame Control
     frameCtrl = dot11.Dot11(FCS_at_end = False)
     frameCtrl.set_version(0)
@@ -112,19 +121,29 @@ def generate_probe_response(vbssid, ssid, dst_addr, channel, capa, ht_capa):
     
     mngtFrame.contains(baconFrame)
     frameCtrl.contains(mngtFrame)
+    radioCtrl.contains(frameCtrl)
+
+    return radioCtrl.get_packet()
     
-    resp_str = frameCtrl.get_packet()
-    packet_str = RADIOTAP_STR + resp_str
-    return packet_str
-    
-def generate_auth_response(vbssid, dst_addr):
+def generate_auth_response(vbssid, dst_addr, channel):
     '''
     Generates auth response for the given (vbssid,dst_addr) tuple.
     '''
-    rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
-        
     dst = mac_to_array(dst_addr)
     bssid = mac_to_array(vbssid)
+
+    # Radiotap Header
+    radioCtrl = dot11.RadioTap(aBuffer = RADIOTAP_STR)
+    if channel < WLAN_2_GHZ_CHANNEL_MAX:
+        channel_flags = 0x000a
+        rate = 0x02
+    else:
+        channel_flags = 0x0140
+        rate = 0x0c
+    freq = CHANNEL_FREQS[channel]
+    radioCtrl.set_rate(rate)
+    radioCtrl.set_channel(freq,channel_flags)
+
     
     # Frame Control
     frameCtrl = dot11.Dot11(FCS_at_end = False)
@@ -158,22 +177,30 @@ def generate_auth_response(vbssid, dst_addr):
     
     mngtFrame.contains(authFrame)
     frameCtrl.contains(mngtFrame)
-    
-    resp_str = frameCtrl.get_packet()
-    #log.debug("length of pkt : %d" % len(resp_str))
-    
-    packet_str = RADIOTAP_STR + resp_str
-    return packet_str
+    radioCtrl.contains(frameCtrl)
+
+    return radioCtrl.get_packet()
 
 def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, assoc_id):
     '''
     Generates assoc response for the given vbssid,dst_addr tuple.
     '''
-    rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
-    
     #log.debug("%s, %s" % (ssid, bssid))
     dst = mac_to_array(dst_addr)
     bssid = mac_to_array(vbssid)
+
+    # Radiotap Header
+    radioCtrl = dot11.RadioTap(aBuffer = RADIOTAP_STR)
+    if channel < WLAN_2_GHZ_CHANNEL_MAX:
+        channel_flags = 0x000a
+        rate = 0x02
+    else:
+        channel_flags = 0x0140
+        rate = 0x0c
+    freq = CHANNEL_FREQS[channel]
+    radioCtrl.set_rate(rate)
+    radioCtrl.set_channel(freq,channel_flags)
+
 
     # Frame Control
     frameCtrl = dot11.Dot11(FCS_at_end = False)
@@ -233,16 +260,29 @@ def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, as
 
     mngtFrame.contains(assocFrame)
     frameCtrl.contains(mngtFrame)
-    
-    resp_str = frameCtrl.get_packet()
-    packet_str = RADIOTAP_STR + resp_str
-    return packet_str
+    radioCtrl.contains(frameCtrl)
+
+    return radioCtrl.get_packet()
 
 def generate_beacon(vbssid, ssid, channel, capa, ht_capa):
     '''
     Generates beacon for the given (vbssid, ssid) tuple.
     '''
     bssid = mac_to_array(vbssid)
+
+    # Radiotap Header
+    radioCtrl = dot11.RadioTap(aBuffer = RADIOTAP_STR)
+    if channel < WLAN_2_GHZ_CHANNEL_MAX:
+        channel_flags = 0x000a
+        rate = 0x02
+    else:
+        channel_flags = 0x0140
+        rate = 0x0c
+    freq = CHANNEL_FREQS[channel]
+    radioCtrl.set_rate(rate)
+    radioCtrl.set_channel(freq,channel_flags)
+
+
     # Frame Control
     frameCtrl = dot11.Dot11(FCS_at_end = False)
     frameCtrl.set_version(0)
@@ -296,17 +336,14 @@ def generate_beacon(vbssid, ssid, channel, capa, ht_capa):
  
     mngtFrame.contains(baconFrame)
     frameCtrl.contains(mngtFrame)
+    radioCtrl.contains(frameCtrl)
 
-    resp_str = frameCtrl.get_packet()
-    packet_str = RADIOTAP_STR + resp_str
-    return packet_str
+    return radioCtrl.get_packet()
 
 def generate_action_response(vbssid, dst_addr):
     '''
     Generates action response for BlockAck for the given (vbssid,dst_addr) tuple.
     '''
-    rdtap =  dpkt.radiotap.Radiotap(RADIOTAP_STR)
-        
     dst = mac_to_array(dst_addr)
     bssid = mac_to_array(vbssid)
     
