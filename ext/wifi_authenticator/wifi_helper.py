@@ -85,7 +85,7 @@ def generate_probe_response(vbssid, ssid, dst_addr, channel, capa, ht_capa):
     # Beacon Frame
     baconFrame = dot11.Dot11ManagementProbeResponse()
     baconFrame.set_ssid(ssid)
-    baconFrame.set_capabilities(0x0421)
+    baconFrame.set_capabilities(capa)
     baconFrame.set_beacon_interval(BEACON_INTERVAL)
     baconFrame.set_ds_parameter_set(channel)
     baconFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24])
@@ -199,7 +199,7 @@ def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, as
  
     # Assoc Response Frame
     assocFrame = dot11.Dot11ManagementAssociationResponse()
-    assocFrame.set_capabilities(0x0421)
+    assocFrame.set_capabilities(capa)
     assocFrame.set_status_code(0)
     # bits 14-15 need to be set on the response, not the kernel.
     assocFrame.set_association_id(assoc_id | 0xc000) 
@@ -230,7 +230,7 @@ def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, as
     packet_str = RADIOTAP_STR + resp_str
     return packet_str
 
-def generate_beacon(vbssid, ssid, channel=DEFAULT_CHANNEL):
+def generate_beacon(vbssid, ssid, channel, capa, ht_capa):
     '''
     Generates beacon for the given (vbssid, ssid) tuple.
     '''
@@ -262,7 +262,7 @@ def generate_beacon(vbssid, ssid, channel=DEFAULT_CHANNEL):
     # Beacon Frame
     baconFrame = dot11.Dot11ManagementProbeResponse()
     baconFrame.set_ssid(ssid)
-    baconFrame.set_capabilities(0x0421)
+    baconFrame.set_capabilities(capa)
     baconFrame.set_beacon_interval(BEACON_INTERVAL)
     baconFrame.set_ds_parameter_set(channel)
     baconFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24])

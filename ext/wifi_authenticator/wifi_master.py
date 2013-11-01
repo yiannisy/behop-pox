@@ -945,7 +945,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
 
         # Some drivers also wait to hear a beacon before they move from authentication to association...
         # this shouldn't happen here... 
-        packet_str = generate_beacon(vbssid, ssid)
+        packet_str = generate_beacon(vbssid, ssid, wifi_ap.current_channel,
+                                     wifi_ap.capabilities, wifi_ap.ht_capabilities_info)
         self.aps[event.dpid].send_packet_out(packet_str)
 
     def sendAssocResponse(self, event):
