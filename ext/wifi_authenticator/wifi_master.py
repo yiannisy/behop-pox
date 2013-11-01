@@ -122,18 +122,20 @@ class HostTimeout(Event):
         self.dst_addr = int(dst_addr.toStr(separator=''),16)
 
 class AddStation(Event):
-    def __init__(self, dpid, src_addr, vbssid, aid, params):
+    def __init__(self, dpid, intf, src_addr, vbssid, aid, params):
         Event.__init__(self)
         self.dpid = dpid
+        self.intf = intf
         self.src_addr = src_addr
         self.vbssid = vbssid
         self.aid = aid
         self.params = params
 
 class RemoveStation(Event):
-    def __init__(self, dpid, src_addr):
+    def __init__(self, dpid, intf, src_addr):
         Event.__init__(self)
         self.dpid = dpid
+        self.intf = intf
         self.src_addr = src_addr
 
 class MoveStation(Event):
@@ -144,9 +146,10 @@ class MoveStation(Event):
         self.new_dpid = new_dpid
 
 class UpdateBssidmask(Event):
-    def __init__(self, dpid, bssidmask):
+    def __init__(self, dpid, intf, bssidmask):
         Event.__init__(self)
         self.dpid = dpid
+        self.intf = intf
         self.bssidmask = bssidmask
 
 class Station(object):
@@ -222,31 +225,70 @@ class WifiAuthenticateSwitch(EventMixin):
     _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, AddStation, RemoveStation, 
                               DeauthRequest, DisassocRequest, ActionEvent])
     
-    def __init__(self, connection, transparent, is_blacklisted = False, whitelisted_stas = None):
+    def __init__(self, connection, transparent, is_blacklisted = False, whitelisted_stas = None, channel = 11):
         EventMixin.__init__(self)
         self.connection = connection
         self.transparent = transparent
         self.is_blacklisted = is_blacklisted
         self.whitelisted_stas = whitelisted_stas
+        self.current_channel = channel
         self.clients = []
-        
+        self.set_capabilities()
+
         connection.addListeners(self)
         # Setup default behavior
         # Switch traffic between WAN <-> WLAN port
         # Allow in-band connections to the AP from the WAN port
         # This assumes that the connection is direct and there is no NAT/FlowVisor in between, as 
         # we detect the AP's address through the OF connection.
-        # Monitor port goes directly to the controller...
-        self._set_simple_flow(WAN_PORT,WLAN_PORT)
-        self._set_simple_flow(WLAN_PORT,WAN_PORT)
+        # Monitor port goes directly to the controller...        
+        self._set_simple_flow(WAN_PORT,self.wlan_port)
+        self._set_simple_flow(self.wlan_port,WAN_PORT)
         self._set_simple_flow(WAN_PORT,of.OFPP_NORMAL,priority=2,ip_dst=connection.sock.getpeername()[0])
         self._set_simple_flow(of.OFPP_LOCAL,of.OFPP_NORMAL, priority=2,ip_src=connection.sock.getpeername()[0])
+
+        # send a few more bytes in to capture all WiFi Header.
+        self.connection.send(of.ofp_set_config(miss_send_len=256))        
+
+
 
     def is_whitelisted(self, addr):
         if addr in self.whitelisted_stas:
             return True
         return False
+
+    def is_band_2GHZ(self):
+        if self.current_channel <= WLAN_2_GHZ_CHANNEL_MAX:
+            return True
+        return False
                               
+    def set_capabilities(self):
+        '''
+        Set the capabilities advertised by the AP according to the channel.
+        '''
+        if self.is_band_2GHZ():
+            self.capabilities = WLAN_2_GHZ_CAPA
+            self.ht_capabilities_info = WLAN_2_GHZ_HT_CAPA
+            self.capa_exp = WLAN_2_GHZ_CAPA_EXP
+            self.capa_mask = WLAN_2_GHZ_CAPA_MASK
+            self.ht_capa_exp = WLAN_2_GHZ_HT_CAPA_EXP
+            self.ht_capa_mask = WLAN_2_GHZ_HT_CAPA_MASK
+            self.intf = WLAN_2_GHZ_INTF
+            self.mon_port = WLAN_2_GHZ_MON_PORT
+            self.wlan_port = WLAN_2_GHZ_WLAN_PORT
+        else:
+            self.capabilities = WLAN_5_GHZ_CAPA
+            self.ht_capabilities_info = WLAN_5_GHZ_HT_CAPA
+            self.capa_exp = WLAN_5_GHZ_CAPA_EXP
+            self.capa_mask = WLAN_5_GHZ_CAPA_MASK
+            self.ht_capa_exp = WLAN_5_GHZ_HT_CAPA_EXP
+            self.ht_capa_mask = WLAN_5_GHZ_HT_CAPA_MASK
+            self.intf = WLAN_5_GHZ_INTF
+            self.mon_port = WLAN_5_GHZ_MON_PORT
+            self.wlan_port = WLAN_5_GHZ_WLAN_PORT
+
+
+
     def _set_simple_flow(self,port_in,port_out, priority=1,ip_src=None, ip_dst=None,queue_id=None):
         msg = of.ofp_flow_mod()
         msg.idle_timeout=0
@@ -264,7 +306,7 @@ class WifiAuthenticateSwitch(EventMixin):
     def _handle_PacketIn(self, event):
         if self.is_blacklisted:
             return
-        if event.port != MON_PORT:
+        if event.port != self.mon_port:
             return
 
         packet = event.parsed
@@ -341,7 +383,7 @@ class WifiAuthenticateSwitch(EventMixin):
 
     def send_packet_out(self, msg_raw):
         msg = of.ofp_packet_out(in_port=of.OFPP_NONE)
-        msg.actions.append(of.ofp_action_output(port = MON_PORT))
+        msg.actions.append(of.ofp_action_output(port = self.mon_port))
         msg.data = msg_raw
         self.connection.send(msg)
 
@@ -522,6 +564,17 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         '''
         return ((event.dpid == sta.dpid) and (event.bssid == sta.vbssid) and (sta.state == 'ASSOC'))
 
+    def is_valid_assoc_params(self, event, sta):
+        '''
+        Checks if the station asking to associate supports 40MHz, short GI and short slot.
+        '''
+        wifi_ap = self.aps[sta.dpid]
+        if ((event.params.capabilities & wifi_ap.capa_mask == wifi_ap.capa_exp) and (event.params.ht_capabilities) and (event.params.ht_capabilities['ht_capab_info'] & wifi_ap.ht_capa_mask == wifi_ap.ht_capa_exp)):
+            return True
+        else:
+            log.error("Station with unexpected capabilities : %x (capab:%04x ht_capab:%04x)" % (sta.addr, event.params.capabilities, event.params.ht_capabilities['ht_capab_info']))
+            return False
+
     def check_sta_switch(self, event, sta):
         '''
         Checks if we need to switch AP for this sta.
@@ -605,7 +658,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             self.bh_switch = BackhaulSwitch(event.connection, self.transparent)
             self.bh_switch.addListeners(self)
         else:
-            wifi_ap = WifiAuthenticateSwitch(event.connection, self.transparent, self.is_blacklisted(event.dpid), self.whitelisted_stas)
+            wifi_ap = WifiAuthenticateSwitch(event.connection, self.transparent, self.is_blacklisted(event.dpid), self.whitelisted_stas, channel = BEHOP_CHANNELS[event.dpid])
             wifi_ap.addListeners(self)
             self.aps[event.dpid] = wifi_ap
 
@@ -697,7 +750,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
 
         self.check_sta_switch(event, sta)
 
-        if self.is_valid_assoc_request(event, sta):
+        if self.is_valid_assoc_request(event, sta) and self.is_valid_assoc_params(event, sta):
             sta.params = event.params
             sta.last_seen = time.time()
             new_state = self.processFSM(sta.state, 'AssocReq', event)
@@ -798,21 +851,25 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         * add a flow to the backhaul switch.
         * Add state to the AP.
         '''
-        self.bh_switch._set_simple_flow(BACKHAUL_UPLINK, [self.bh_switch.topo[dpid]], priority=2,
-                                        mac_dst=EthAddr(mac_to_str(addr)), idle_timeout = DEFAULT_HOST_TIMEOUT)
-        self.raiseEvent(AddStation(dpid, addr, self.stations[addr].vbssid,self.stations[addr].aid,self.stations[addr].params))
+        wifi_ap = self.aps[dpid]
+        if self.bh_switch:
+            self.bh_switch._set_simple_flow(BACKHAUL_UPLINK, [self.bh_switch.topo[dpid]], priority=2,
+                                            mac_dst=EthAddr(mac_to_str(addr)), idle_timeout = DEFAULT_HOST_TIMEOUT)
+        self.raiseEvent(AddStation(dpid, wifi_ap.intf, addr, self.stations[addr].vbssid,self.stations[addr].aid,self.stations[addr].params))
         
     def removeStation(self, dpid, addr):
+        wifi_ap = self.aps[dpid]
         if self.bh_switch:
             self.bh_switch._del_simple_flow(BACKHAUL_UPLINK,mac_dst=EthAddr(mac_to_str(addr)))
-        self.raiseEvent(RemoveStation(dpid, addr))
+        self.raiseEvent(RemoveStation(dpid, wifi_ap.intf, addr))
 
-    def update_bssidmask(self, dpid):        
+    def update_bssidmask(self, dpid):
+        wifi_ap = self.aps[dpid]
         bssidmask = 0xffffffffffff
         for sta in self.stations.values():
             if sta.dpid == dpid:
                 bssidmask &= ~(sta.vbssid ^ BASE_HW_ADDRESS)
-        self.raiseEvent(UpdateBssidmask(dpid, bssidmask))
+        self.raiseEvent(UpdateBssidmask(dpid, wifi_ap.intf, bssidmask))
 
     def _handle_HostTimeout(self, event):
         '''
@@ -871,13 +928,16 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
     def sendProbeResponse(self, event):
         log.debug("Sending Probe Response to %x" % event.src_addr)
         vbssid = self.stations[event.src_addr].vbssid
+        wifi_ap = self.aps[event.dpid]
         ssid = SERVING_SSID
-        pkt_str = generate_probe_response(vbssid, ssid, event.src_addr)
+        pkt_str = generate_probe_response(vbssid, ssid, event.src_addr, wifi_ap.current_channel, 
+                                          wifi_ap.capabilities, wifi_ap.ht_capabilities_info)
         self.aps[event.dpid].send_packet_out(pkt_str)
 
     def sendAuthResponse(self, event):
         log.debug("Sending Auth Response to %x" % event.src_addr)
         vbssid = self.stations[event.src_addr].vbssid
+        wifi_ap = self.aps[event.dpid]
         ssid = SERVING_SSID
 
         packet_str = generate_auth_response(vbssid, event.src_addr)
@@ -891,13 +951,16 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
     def sendAssocResponse(self, event):
         log.debug("Sending Assoc Response to %x" % event.src_addr)
         vbssid = self.stations[event.src_addr].vbssid
-        packet_str = generate_assoc_response(vbssid, event.src_addr, event.params)
+        wifi_ap = self.aps[event.dpid]
+        packet_str = generate_assoc_response(vbssid, event.src_addr, event.params, wifi_ap.current_channel,
+                                             wifi_ap.capabilities, wifi_ap.ht_capabilities_info)
         self.aps[event.dpid].send_packet_out(packet_str)
-
+        
     def sendActionResponse(self, event):
         log.debug("Sending Action Response to %x" % event.src_addr)
         vbssid = self.stations[event.src_addr].vbssid
-        packet_str = generate_action_response(vbssid, event.src_addr)
+        wifi_ap = self.aps[event.dpid]
+        packet_str = generate_action_response(vbssid, event.src_addr, wifi_ap.current_channel)
         self.aps[event.dpid].send_packet_out(packet_str)
 
 def launch( transparent=False):

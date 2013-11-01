@@ -13,9 +13,9 @@ G_RATES = [1,2,6,11,12,18,24,36,48,54]
 G_RATES_LEN = len(G_RATES)
 
 GET_DPID = {"method":"transact", "params":["Open_vSwitch", {"op":"select","table":"Bridge","where":[],"columns":["datapath_id"]}], "id":1}
-ADD_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiSta","row":{"addr":None,"vbssid":None,"ht_capa":None,"sup_rates":["set",[]]}}],"id":1}
+ADD_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiSta","row":{"addr":None,"vbssid":None,"intf":None,"ht_capa":None,"sup_rates":["set",[]]}}],"id":1}
 DEL_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiSta","where":[]}],"id":2}
-UPDATE_BSSIDMASK = {"method":"transact", "params":["Wifi_vSwitch",{"op":"update","table":"WifiConfig","where":[],"row":{"bssidmask":None}}],"id":1}
+UPDATE_BSSIDMASK = {"method":"transact", "params":["Wifi_vSwitch",{"op":"update","table":"WifiConfig","where":[],"row":{"bssidmask":None,"intf":None}}],"id":1}
 
 class SnrSummary(Event):
     def __init__(self, summary):
@@ -121,6 +121,7 @@ class OvsDBBot(ChannelBot, EventMixin):
             _ht_capa_asel = 0
         add_json = ADD_STATION.copy()
         add_json["params"][1]["row"] = {"addr":_addr,"vbssid":_vbssid,
+                                        "intf":event.intf,
                                         "sup_rates":_sup_rates,
                                         "ext_rates":_ext_rates,
                                         "sta_aid":event.aid,
@@ -149,7 +150,7 @@ class OvsDBBot(ChannelBot, EventMixin):
     def _handle_RemoveStation(self, event):
         rem_json = DEL_STATION.copy()
         _addr = "%012x" % event.src_addr
-        rem_json["params"][1]["where"] = [["addr","==",_addr]]
+        rem_json["params"][1]["where"] = [["addr","==",_addr],["intf","==",event.intf]]
         log.debug("Removing Station %x from AP %x" % (event.src_addr, event.dpid))
         if self.connections.has_key(event.dpid):
             con = self.connections[event.dpid]
@@ -163,6 +164,7 @@ class OvsDBBot(ChannelBot, EventMixin):
         upd_json = UPDATE_BSSIDMASK.copy()
         _bssidmask = "%012x" % event.bssidmask
         upd_json["params"][1]["row"]["bssidmask"] = _bssidmask
+        upd_json["params"][1]["row"]["intf"] = event.intf
         log.debug("Updating BSSIDMASK for AP %x : %x" % (event.dpid, event.bssidmask))
         if self.connections.has_key(event.dpid):
             con = self.connections[event.dpid]

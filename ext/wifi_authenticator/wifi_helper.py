@@ -49,7 +49,7 @@ def get_ht_capa_str(sta_params):
                      0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
     return ht_capa_bytes
 
-def generate_probe_response(vbssid, ssid, dst_addr, channel=DEFAULT_CHANNEL):
+def generate_probe_response(vbssid, ssid, dst_addr, channel, capa, ht_capa):
     '''
     Generates probe response for the given (vbssid, ssid, dst_addr) tuple.
     '''
@@ -163,7 +163,7 @@ def generate_auth_response(vbssid, dst_addr):
     packet_str = RADIOTAP_STR + resp_str
     return packet_str
 
-def generate_assoc_response(vbssid, dst_addr, params, assoc_id= 0xc001, channel = DEFAULT_CHANNEL):
+def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, assoc_id= 0xc001):
     '''
     Generates assoc response for the given vbssid,dst_addr tuple.
     '''
