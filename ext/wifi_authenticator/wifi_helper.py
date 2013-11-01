@@ -7,8 +7,9 @@ import random
 from pox.core import core
 from behop_config import *
 
-RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x02\x6c\x09\xa0\x00\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
-HT_CAPA_STR_BASE = "\x6c\x11\x1b\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+#RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x02\x6c\x09\xa0\x00\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
+RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x0c\x3c\x14\x40\x01\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
+HT_CAPA_STR_BASE = "\x1b\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 
 HOMENETS_OUI = "020000" # needs to be better defined.
 BEACON_INTERVAL = 1000
@@ -87,7 +88,9 @@ def generate_probe_response(vbssid, ssid, dst_addr, channel, capa, ht_capa):
     baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x30\x48\x60\x6c")
     baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.ERP_INFO,"\x02")
     # HT Capabilities
-    ht_capa_str = HT_CAPA_STR_BASE
+    ht_capa_info_str = struct.pack('H',ht_capa)
+    ht_capa_rest_str = HT_CAPA_STR_BASE
+    ht_capa_str = ht_capa_info_str + ht_capa_rest_str
     baconFrame._set_element(45,ht_capa_str)
     # HT info
     ht_info_ch_str = chr(channel)
@@ -206,7 +209,9 @@ def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, as
     assocFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x12\x24\x60\x6c")
     
     # HT Capabilities
-    ht_capa_str = HT_CAPA_STR_BASE
+    ht_capa_info_str = struct.pack('H',ht_capa)
+    ht_capa_rest_str = HT_CAPA_STR_BASE
+    ht_capa_str = ht_capa_info_str + ht_capa_rest_str
     assocFrame._set_element(45,ht_capa_str)
     # HT info
     ht_info_ch_str = chr(channel)
@@ -272,7 +277,9 @@ def generate_beacon(vbssid, ssid, channel, capa, ht_capa):
     baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x30\x48\x60\x6c")
     baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.ERP_INFO,"\x02")
     # HT Capabilities
-    ht_capa_str = HT_CAPA_STR_BASE
+    ht_capa_info_str = struct.pack('H',ht_capa)
+    ht_capa_rest_str = HT_CAPA_STR_BASE
+    ht_capa_str = ht_capa_info_str + ht_capa_rest_str
     baconFrame._set_element(45,ht_capa_str)
     # HT info
     ht_info_ch_str = chr(channel)
