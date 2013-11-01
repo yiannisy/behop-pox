@@ -44,11 +44,6 @@ def get_ht_capa_info(ht_capa_info_sta, own_capa_info):
     print "host installed with capa : %x" % cap
     return cap
 
-def get_ht_capa_str(sta_params):
-    ht_capa_bytes = (0x10, 0x4c, 0x1b,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-                     0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
-    return ht_capa_bytes
-
 def generate_probe_response(vbssid, ssid, dst_addr, channel, capa, ht_capa):
     '''
     Generates probe response for the given (vbssid, ssid, dst_addr) tuple.
