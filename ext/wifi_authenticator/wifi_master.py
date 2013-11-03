@@ -25,6 +25,11 @@ log = core.getLogger("WifiMessenger")
 log_fsm = core.getLogger("WifiFSM")
 log_mob = core.getLogger("WifiMobility")
 
+all_stations = {}
+all_aps = {}
+phase_out = [False]
+
+
 class ProbeRequest(Event):
     '''Event raised by an AP when a probe request is received.
     @dpid : the AP reporting the request
@@ -311,9 +316,7 @@ class WifiAuthenticateSwitch(EventMixin):
         self.connection.send(msg)
 
     def _handle_PacketIn(self, event):
-        if self.is_blacklisted:
-            return
-        if event.port != self.mon_port:
+        if ((self.is_blacklisted) or (event.port != self.mon_port) or (phase_out[0])):
             return
 
         packet = event.parsed
@@ -970,10 +973,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         packet_str = generate_action_response(vbssid, event.src_addr, wifi_ap.current_channel)
         all_aps[event.dpid].send_packet_out(packet_str)
 
-all_stations = {}
-all_aps = {}
-
 def launch( transparent=False):
-    core.registerNew(WifiAuthenticator, str_to_bool(transparent))
     core.Interactive.variables['behop_stations'] = all_stations
     core.Interactive.variables['behop_aps'] = all_aps
+    core.Interactive.variables['behop_phase_out'] = phase_out
+    core.registerNew(WifiAuthenticator, str_to_bool(transparent))
