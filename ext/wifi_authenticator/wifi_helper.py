@@ -18,6 +18,15 @@ DEFAULT_CHANNEL = 11
 
 log = core.getLogger("WifiMaster")
 log_fsm = core.getLogger("WifiFSM")
+log_ltsta = core.getLogger("WifiLTSTA")
+rdtap_decoder = RadioTapDecoder()
+
+def log_assocreq(packet, params):
+    im_radiotap = rdtap_decoder.decode(packet.raw)
+    channel = im_radiotap.get_channel()[0]
+    log_ltsta.debug("%s|%d|%s|%s|%04x|%04x" % (byte_array_to_hex_str(params.addr),channel,
+                                               params.supp_rates,params.ext_rates,
+                                               params.capabilities,params.ht_capabilities['ht_capab_info']))
 
 def mac_to_array(mac):
     s_mac = mac
