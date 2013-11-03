@@ -116,10 +116,13 @@ class HostTimeout(Event):
     @dst_addr : The address of the host.
     @dpid : The dpid of the switch.
     '''
-    def __init__(self, dpid, dst_addr):
+    def __init__(self, dpid, dst_addr, packets, bytes, dur):
         Event.__init__(self)
         self.dpid = dpid
         self.dst_addr = int(dst_addr.toStr(separator=''),16)
+        self.packets = packets
+        self.bytes = bytes
+        self.dur = dur
 
 class AddStation(Event):
     def __init__(self, dpid, intf, src_addr, vbssid, aid, params, ht_capa):
@@ -193,7 +196,10 @@ class BackhaulSwitch(EventMixin):
         '''
         if event.timeout:
             addr = event.ofp.match.dl_dst
-            self.raiseEvent(HostTimeout(event.dpid, addr))
+            packets = event.ofp.packet_count
+            bytes = event.ofp.byte_count
+            dur = event.ofp.duration_sec
+            self.raiseEvent(HostTimeout(event.dpid, addr, packets, bytes, dur))
 
     def _set_simple_flow(self,port_in, ports_out, priority=1,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None, idle_timeout=0):
         msg = of.ofp_flow_mod()
@@ -883,8 +889,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             return
         old_state = sta.state
         new_state = self.processFSM(sta.state, 'HostTimeout', sta)
-        log_fsm.debug("%012x : %s -> %s (HostTimeout, dpid:%012x)" % 
-                      (event.dst_addr, old_state, new_state, event.dpid))
+        log_fsm.debug("%012x : %s -> %s (HostTimeout, dpid:%012x, packets:%d, bytes:%d,secs:%d)" % 
+                      (event.dst_addr, old_state, new_state, event.dpid, event.packets, event.bytes,event.dur))
 
     def sniff_to_reserve(self, event):
         '''
