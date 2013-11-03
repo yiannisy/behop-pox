@@ -10,6 +10,8 @@ from behop_config import *
 RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x0c\x3c\x14\x40\x01\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
 HT_CAPA_STR_BASE = "\x1b\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 
+
+
 HOMENETS_OUI = "020000" # needs to be better defined.
 BEACON_INTERVAL = 1000
 DEFAULT_CHANNEL = 11
@@ -93,8 +95,11 @@ def generate_probe_response(vbssid, ssid, dst_addr, channel, capa, ht_capa):
     baconFrame.set_capabilities(capa)
     baconFrame.set_beacon_interval(BEACON_INTERVAL)
     baconFrame.set_ds_parameter_set(channel)
-    baconFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24])
-    baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x30\x48\x60\x6c")
+    if channel < WLAN_2_GHZ_CHANNEL_MAX:
+        baconFrame.set_supported_rates(WLAN_2_GHZ_SUPP_RATES)
+        baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x30\x48\x60\x6c")
+    else:
+        baconFrame.set_supported_rates(WLAN_5_GHZ_SUPP_RATES)
     baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.ERP_INFO,"\x02")
     # HT Capabilities
     ht_capa_info_str = struct.pack('H',ht_capa)
@@ -232,8 +237,11 @@ def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, as
     assocFrame.set_status_code(0)
     # bits 14-15 need to be set on the response, not the kernel.
     assocFrame.set_association_id(assoc_id | 0xc000) 
-    assocFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x18, 0x30, 0x48])
-    assocFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x12\x24\x60\x6c")
+    if channel < WLAN_2_GHZ_CHANNEL_MAX:
+        assocFrame.set_supported_rates(WLAN_2_GHZ_SUPP_RATES)
+        assocFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x30\x48\x60\x6c")
+    else:
+        assocFrame.set_supported_rates(WLAN_5_GHZ_SUPP_RATES)
     
     # HT Capabilities
     ht_capa_info_str = struct.pack('H',ht_capa)
@@ -313,8 +321,11 @@ def generate_beacon(vbssid, ssid, channel, capa, ht_capa):
     baconFrame.set_capabilities(capa)
     baconFrame.set_beacon_interval(BEACON_INTERVAL)
     baconFrame.set_ds_parameter_set(channel)
-    baconFrame.set_supported_rates([0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24])
-    baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x30\x48\x60\x6c")
+    if channel < WLAN_2_GHZ_CHANNEL_MAX:
+        baconFrame.set_supported_rates(WLAN_2_GHZ_SUPP_RATES)
+        baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.EXT_SUPPORTED_RATES, "\x30\x48\x60\x6c")
+    else:
+        baconFrame.set_supported_rates(WLAN_5_GHZ_SUPP_RATES)
     baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.ERP_INFO,"\x02")
     # HT Capabilities
     ht_capa_info_str = struct.pack('H',ht_capa)
