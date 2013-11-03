@@ -23,11 +23,30 @@ log_ltsta = core.getLogger("WifiLTSTA")
 rdtap_decoder = RadioTapDecoder()
 
 def log_assocreq(packet, params):
-    im_radiotap = rdtap_decoder.decode(packet.raw)
-    channel = im_radiotap.get_channel()[0]
-    log_ltsta.debug("%s|%d|%s|%s|%04x|%04x" % (byte_array_to_hex_str(params.addr),channel,
-                                               params.supp_rates,params.ext_rates,
-                                               params.capabilities,params.ht_capabilities['ht_capab_info']))
+    addr = "000000000000"
+    channel = 0
+    supp_rates = ()
+    ext_rates = ()
+    capa = 0
+    ht_capa = 0
+    if (params):
+        addr = params.addr
+        supp_rates = params.supp_rates
+        ext_rates = params.ext_rates
+        capa = params.capabilities
+        if params.ht_capabilities:
+            ht_capa = params.ht_capabilities['ht_capab_info']
+    try:
+        im_radiotap = rdtap_decoder.decode(packet.raw)
+        channel = im_radiotap.get_channel()[0]
+    except:
+        log_ltsta.error("Cannot obtain channel information")
+    try:
+        log_ltsta.debug("%s|%d|%s|%s|%04x|%04x" % (byte_array_to_hex_str(addr),channel,
+                                                   supp_rates,ext_rates,
+                                                   capa,ht_capa['ht_capab_info']))
+    except:
+        log_ltsta.error("Cannot dump node capabilities---skipping...")
 
 def mac_to_array(mac):
     s_mac = mac
