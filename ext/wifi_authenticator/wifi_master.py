@@ -18,6 +18,7 @@ from wifi_helper import *
 from dpkt import NeedData
 from pox.lib.addresses import EthAddr
 from behop_config import *
+from wifi_params import *
 
 import hashlib
 
