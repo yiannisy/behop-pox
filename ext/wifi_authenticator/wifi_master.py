@@ -668,7 +668,13 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             self.bh_switch = BackhaulSwitch(event.connection, self.transparent)
             self.bh_switch.addListeners(self)
         else:
-            wifi_ap = WifiAuthenticateSwitch(event.connection, self.transparent, self.is_blacklisted(event.dpid), self.whitelisted_stas, channel = BEHOP_CHANNELS[event.dpid])
+            try:
+                channel = BEHOP_CHANNELS[event.dpid]
+            except:
+                # no predefined channel for this AP---pick-up the default one.
+                log.debug("no predefined channel for this AP---pick-up the default one.")
+                channel = DEFAULT_BEHOP_CHANNEL
+            wifi_ap = WifiAuthenticateSwitch(event.connection, self.transparent, self.is_blacklisted(event.dpid), self.whitelisted_stas, channel = channel)
             wifi_ap.addListeners(self)
             all_aps[event.dpid] = wifi_ap
 
