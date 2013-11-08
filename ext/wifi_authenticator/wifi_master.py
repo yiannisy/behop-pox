@@ -316,7 +316,10 @@ class WifiAuthenticateSwitch(EventMixin):
         msg.actions.append(of.ofp_action_output(port = port_out))
         self.connection.send(msg)
 
-    def _handle_PacketIn(self, event):
+    def _handle_PacketIn(self, event):        
+        # first log this packet for node's information
+        log_packet(event.parsed)
+
         if ((self.is_blacklisted) or (event.port != self.mon_port) or (phase_out[0])):
             return
 
@@ -344,18 +347,6 @@ class WifiAuthenticateSwitch(EventMixin):
             log.error("Impacket conversion failed.")
             log.error(e)
             return
-
-        if (im_pkt.get_type_n_subtype() == dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_ACTION):
-            radiotap_decoder = RadioTapDecoder()
-            im_radiotap = radiotap_decoder.decode(packet.raw)
-            _dot11 =  im_radiotap.child()
-            mgmt_base = _dot11.child()
-            addr = int(byte_array_to_hex_str(mgmt_base.get_source_address()),16)
-            bssid = int(byte_array_to_hex_str(mgmt_base.get_bssid()),16)
-            log.debug("Got action event from %x : %x %x" % (event.dpid, addr,bssid))
-            #self.raiseEvent(ActionEvent(event.dpid, addr, bssid))
-
-        #log.debug("received packet %x %x from %s" % (ie.type, ie.subtype, binascii.hexlify(ie.mgmt.src)))
         
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_BEACON):
             return
@@ -367,7 +358,6 @@ class WifiAuthenticateSwitch(EventMixin):
                 return
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_PROBE_REQ):
-            #log.debug("%s -> %s (%s)" % (binascii.hexlify(ie.mgmt.src), ie.ssid, ie.ssid.data))
             self.raiseEvent(ProbeRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), snr, ie.ssid.data))
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_AUTH):
@@ -376,7 +366,6 @@ class WifiAuthenticateSwitch(EventMixin):
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_ASSOC_REQ):
             params = WifiStaParams(packet.raw[rd_len:])
-            log_assocreq(packet, params)
             self.raiseEvent(AssocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DISASSOC):
@@ -392,7 +381,6 @@ class WifiAuthenticateSwitch(EventMixin):
         #if (ie.type == 0 and ie.subtype != 8):
         #    print "Received %x from %s" % (ie.subtype, binascii.hexlify(ie.mgmt.src))
        
-
     def send_packet_out(self, msg_raw):
         msg = of.ofp_packet_out(in_port=of.OFPP_NONE)
         msg.actions.append(of.ofp_action_output(port = self.mon_port))

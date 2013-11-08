@@ -12,6 +12,7 @@ old.*
 *.orig
 *.swp
 *.pcap
+*.log
 \#*\#
 *~
 #ext/*

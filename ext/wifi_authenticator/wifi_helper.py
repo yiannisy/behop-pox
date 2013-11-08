@@ -22,6 +22,50 @@ log_fsm = core.getLogger("WifiFSM")
 log_ltsta = core.getLogger("WifiLTSTA")
 rdtap_decoder = RadioTapDecoder()
 
+def log_packet(packet):
+    try:
+        im_radiotap = rdtap_decoder.decode(packet.raw)
+    except:
+        log_ltsta.error("cannot decode radiotap information.")
+        return
+    try:
+        channel = im_radiotap.get_channel()[0]
+        if channel < WLAN_2_GHZ_FREQ_MAX :
+            band = '2.4GHz'
+        else:
+            band = '5GHz'
+    except:
+        log_ltsta.error("cannot get channel information.")
+        return
+    try:
+        _dot11 = im_radiotap.child()
+        mgmt_base = _dot11.child()
+        addr = byte_array_to_hex_str(mgmt_base.get_source_address())
+        type_subtype = _dot11.get_type_n_subtype()
+    except:
+        log_ltsta.error("cannot obtain mgmt packet.")
+        return
+    if type_subtype == dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_PROBE_REQUEST:
+        log_ltsta.debug("PROBE_REQ|%s|%d|%s" % (addr,channel,band))
+        
+
+
+def log_probereq(packet):
+    try:
+        im_radiotap = rdtap_decoder.decode(packet.raw)
+        channel = im_radiotap.get_channel()[0]
+    except:
+        log_ltsta.error("Cannot obtain channel information")
+        return
+    try:
+        _dot11 = im_radiotap.child()
+        mgmt_base = _dot11.child()
+        addr = byte_array_to_hex_str(mgmt_base.get_source_address())
+    except:
+        log_ltsta.error("cannot obtain source mac address")
+        return
+    log_ltsta.debug("PROBE_REQ|%s|%d" % (addr,channel))
+
 def log_assocreq(packet, params):
     addr = "000000000000"
     channel = 0
@@ -42,7 +86,7 @@ def log_assocreq(packet, params):
     except:
         log_ltsta.error("Cannot obtain channel information")
     try:
-        log_ltsta.debug("%s|%d|%s|%s|%04x|%04x" % (byte_array_to_hex_str(addr),channel,
+        log_ltsta.debug("ASSOC_REQ|%s|%d|%s|%s|%04x|%04x" % (byte_array_to_hex_str(addr),channel,
                                                    supp_rates,ext_rates,
                                                    capa,ht_capa['ht_capab_info']))
     except:
