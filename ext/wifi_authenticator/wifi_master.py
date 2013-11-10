@@ -318,7 +318,7 @@ class WifiAuthenticateSwitch(EventMixin):
 
     def _handle_PacketIn(self, event):        
         # first log this packet for node's information
-        log_packet(event.parsed)
+        log_packet(event.parsed, event.dpid)
 
         if ((self.is_blacklisted) or (event.port != self.mon_port) or (phase_out[0])):
             return

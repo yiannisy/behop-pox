@@ -22,7 +22,7 @@ log_fsm = core.getLogger("WifiFSM")
 log_ltsta = core.getLogger("WifiLTSTA")
 rdtap_decoder = RadioTapDecoder()
 
-def log_packet(packet):
+def log_packet(packet, dpid):
     try:
         im_radiotap = rdtap_decoder.decode(packet.raw)
     except:
@@ -46,7 +46,7 @@ def log_packet(packet):
         log_ltsta.error("cannot obtain mgmt packet.")
         return
     if type_subtype == dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_PROBE_REQUEST:
-        log_ltsta.debug("PROBE_REQ|%s|%d|%s" % (addr,channel,band))
+        log_ltsta.debug("PROBE_REQ|%x|%s|%d|%s" % (dpid,addr,channel,band))
         
 
 
