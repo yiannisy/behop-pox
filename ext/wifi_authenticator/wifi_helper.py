@@ -259,9 +259,10 @@ def generate_auth_response(vbssid, dst_addr, channel):
 
     return radioCtrl.get_packet()
 
-def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, assoc_id):
+def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, assoc_id, reassoc=False):
     '''
     Generates assoc response for the given vbssid,dst_addr tuple.
+    if reassoc is true, it sends a reassociation response frame.
     '''
     #log.debug("%s, %s" % (ssid, bssid))
     dst = mac_to_array(dst_addr)
@@ -283,7 +284,10 @@ def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, as
     # Frame Control
     frameCtrl = dot11.Dot11(FCS_at_end = False)
     frameCtrl.set_version(0)
-    frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_ASSOCIATION_RESPONSE)
+    if reassoc==True:
+        frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_ASSOCIATION_RESPONSE)
+    else:
+        frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_REASSOCIATION_RESPONSE)        
     # Frame Control Flags
     frameCtrl.set_fromDS(0)
     frameCtrl.set_toDS(0)
@@ -305,7 +309,10 @@ def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, as
     mngtFrame.set_sequence_number(sequence)
  
     # Assoc Response Frame
-    assocFrame = dot11.Dot11ManagementAssociationResponse()
+    if reassoc==True:
+        assocFrame = dot11.Dot11ManagementReassociationResponse()
+    else:
+        assocFrame = dot11.Dot11ManagementAssociationResponse()
     assocFrame.set_capabilities(capa)
     assocFrame.set_status_code(0)
     # bits 14-15 need to be set on the response, not the kernel.
@@ -525,12 +532,15 @@ class AssociationFSM(FSM):
         self.add_transition('RESERVED','ProbeReq',self.reinstallSendProbeResponse,'RESERVED')
         self.add_transition('RESERVED','AuthReq',self.sendAuthResponse,'AUTH')
         self.add_transition('RESERVED','AssocReq',self.reinstallSendAssocResponse,'ASSOC')
+        self.add_transition('RESERVED','ReassocReq',self.reinstallSendReassocResponse,'ASSOC')
         self.add_transition('AUTH','ProbeReq',self.reinstallSendProbeResponse,'AUTH')
         self.add_transition('AUTH','AuthReq',self.reinstallSendAuthResponse,'AUTH')
         self.add_transition('AUTH','AssocReq',self.auth_to_assoc,'ASSOC')
+        self.add_transition('AUTH','ReassocReq',self.reinstallSendReassocResponse,'ASSOC')
         self.add_transition('ASSOC','ProbeReq',self.reinstallSendProbeResponse,'ASSOC')
         self.add_transition('ASSOC','AuthReq',self.reinstallSendAuthResponse,'ASSOC')
         self.add_transition('ASSOC','AssocReq',self.reinstallSendAssocResponse,'ASSOC')
+        self.add_transition('ASSOC','ReassocReq',self.reinstallSendReassocResponse,'ASSOC')        
         self.add_transition('ASSOC','DisassocReq',self.delete_station, 'NONE')
         self.add_transition('AUTH','DisassocReq',self.delete_station, 'NONE')
         self.add_transition('ASSOC','DeauthReq',self.delete_station, 'NONE')        

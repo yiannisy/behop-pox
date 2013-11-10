@@ -74,6 +74,23 @@ class AssocRequest(Event):
         self.snr = snr
         self.params = params
 
+class ReassocRequest(Event):
+    '''Event raised by an AP when a probe request is received.
+    @dpid : the AP reporting the request
+    @src_addr : host's address
+    @bssid : the bssid for the assocation
+    @snr: the snr of the packet
+    @params : the Wifi params
+    '''
+    def __init__(self, dpid, src_addr, bssid, snr, params):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.src_addr = src_addr
+        self.bssid = bssid
+        self.snr = snr
+        self.params = params
+
+
 class DisassocRequest(Event):
     '''Event raised by an AP when a disassoc request is received.
     @dpid : the AP reporting the request.
@@ -235,7 +252,7 @@ class BackhaulSwitch(EventMixin):
         self.connection.send(msg)
 
 class WifiAuthenticateSwitch(EventMixin):
-    _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, AddStation, RemoveStation, 
+    _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, ReassocRequest, AddStation, RemoveStation, 
                               DeauthRequest, DisassocRequest, ActionEvent])
     
     def __init__(self, connection, transparent, is_blacklisted = False, whitelisted_stas = None, channel = 11):
@@ -367,6 +384,11 @@ class WifiAuthenticateSwitch(EventMixin):
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_ASSOC_REQ):
             params = WifiStaParams(packet.raw[rd_len:])
             self.raiseEvent(AssocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
+
+        if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_REASSOC_REQ):
+            params = WifiStaParams(packet.raw[rd_len:])
+            self.raiseEvent(ReassocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
+
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DISASSOC):
             self.raiseEvent(DisassocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src), 16), 
@@ -764,6 +786,26 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         else:
             log.warning("invalid assoc request")
 
+    def _handle_ReassocRequest(self, event):
+        if event.src_addr in all_stations.keys():
+            sta = all_stations[event.src_addr]
+        else:
+            all_stations[event.src_addr] = Station(event.src_addr)
+            sta = all_stations[event.src_addr]
+
+        self.check_sta_switch(event, sta)
+
+        if self.is_valid_assoc_request(event, sta) and self.is_valid_assoc_params(event, sta):
+            sta.params = event.params
+            sta.last_seen = time.time()
+            new_state = self.processFSM(sta.state, 'ReassocReq', event)
+            log_fsm.debug("%012x : %s -> %s (ReassocReq, vbssid:%012x dpid:%012x)" % 
+                          (sta.addr, sta.state, new_state, sta.vbssid, sta.dpid))
+            sta.state = new_state
+        else:
+            log.warning("invalid reassoc request")
+
+
     def _handle_DisassocRequest(self, event):
         # we only care about stations already registered...
         if event.src_addr in all_stations.keys():
@@ -918,6 +960,11 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.addStation(event.dpid, event.src_addr)
         self.sendAssocResponse(event)
 
+    def reinstallSendReassocResponse(self, event):
+        self.update_bssidmask(event.dpid)
+        self.addStation(event.dpid, event.src_addr)
+        self.sendReassocResponse(event)
+
 
     def auth_to_assoc(self, event):
         '''
@@ -961,6 +1008,17 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         packet_str = generate_assoc_response(vbssid, event.src_addr, event.params, wifi_ap.current_channel,
                                              wifi_ap.capabilities, wifi_ap.ht_capabilities_info,sta.aid)
         all_aps[event.dpid].send_packet_out(packet_str)
+
+    def sendReassocResponse(self, event):
+        log.debug("Sending ReAssoc Response to %x" % event.src_addr)
+        sta = all_stations[event.src_addr]
+        wifi_ap = all_aps[event.dpid]
+        vbssid = sta.vbssid
+        packet_str = generate_assoc_response(vbssid, event.src_addr, event.params, wifi_ap.current_channel,
+                                             wifi_ap.capabilities, wifi_ap.ht_capabilities_info,sta.aid, 
+                                             reassoc=True)
+        all_aps[event.dpid].send_packet_out(packet_str)
+
         
     def sendActionResponse(self, event):
         log.debug("Sending Action Response to %x" % event.src_addr)
