@@ -265,7 +265,7 @@ class WifiAuthenticateSwitch(EventMixin):
         self.clients = []
         self.set_capabilities()
 
-        connection.addListeners(self)
+        self.listeners = connection.addListeners(self)
         # Setup default behavior
         # Switch traffic between WAN <-> WLAN port
         # Allow in-band connections to the AP from the WAN port
@@ -280,6 +280,16 @@ class WifiAuthenticateSwitch(EventMixin):
         # send a few more bytes in to capture all WiFi Header.
         self.connection.send(of.ofp_set_config(miss_send_len=256))        
 
+    def update_connection(self, connection):
+        '''
+        OVS occasionally restarts and the new connection pop-ups before the previous
+        one disappearing. In that case, do not create a new AP, just update the connection
+        information.
+        '''
+        if self.connection:
+            self.connection.removeListeners(self.listeners)
+        self.connection = connection
+        self.listeners = self.connection.addListeners(self)
 
 
     def is_whitelisted(self, addr):
@@ -679,6 +689,11 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             self.bh_switch = BackhaulSwitch(event.connection, self.transparent)
             self.bh_switch.addListeners(self)
         else:
+            # if we already know this DPID, just update the connection.
+            if all_aps.has_key(event.dpid):
+                log.warn("Updating connection for AP %x" % event.dpid)
+                all_aps[event.dpid].update_connection(event.connection)
+                return
             try:
                 channel = BEHOP_CHANNELS[event.dpid]
             except:
@@ -697,6 +712,9 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         if (event.dpid == BACKHAUL_SWITCH):
             log.debug("Removing Backhaul Switch...")
         else:
+            if not all_aps.has_key(event.dpid) or event.connection != all_aps[event.dpid].connection:
+                log.debug("Will not remove AP state---AP unkown or connection already updated...")
+                return
             log.debug("Removing AP state and associated stations...")
             for sta in all_stations.values():
                 if sta.dpid == event.dpid:
