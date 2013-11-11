@@ -263,6 +263,7 @@ class WifiAuthenticateSwitch(EventMixin):
         self.whitelisted_stas = whitelisted_stas
         self.current_channel = channel
         self.clients = []
+        self.mon_ports = [WLAN_2_GHZ_MON_PORT, WLAN_5_GHZ_MON_PORT]
         self.set_capabilities()
 
         self.listeners = connection.addListeners(self)
@@ -278,7 +279,7 @@ class WifiAuthenticateSwitch(EventMixin):
         self._set_simple_flow(of.OFPP_LOCAL,of.OFPP_NORMAL, priority=2,ip_src=connection.sock.getpeername()[0])
 
         # send a few more bytes in to capture all WiFi Header.
-        self.connection.send(of.ofp_set_config(miss_send_len=256))        
+        self.connection.send(of.ofp_set_config(miss_send_len=1024))        
 
     def update_connection(self, connection):
         '''
@@ -345,7 +346,8 @@ class WifiAuthenticateSwitch(EventMixin):
 
     def _handle_PacketIn(self, event):        
         # first log this packet for node's information
-        log_packet(event.parsed, event.dpid)
+        if event.port in self.mon_ports:
+            log_packet(event.parsed, event.dpid)
 
         if ((self.is_blacklisted) or (event.port != self.mon_port) or (phase_out[0])):
             return
