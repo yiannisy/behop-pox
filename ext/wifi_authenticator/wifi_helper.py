@@ -285,9 +285,9 @@ def generate_assoc_response(vbssid, dst_addr, params, channel, capa, ht_capa, as
     frameCtrl = dot11.Dot11(FCS_at_end = False)
     frameCtrl.set_version(0)
     if reassoc==True:
-        frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_ASSOCIATION_RESPONSE)
+        frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_REASSOCIATION_RESPONSE)
     else:
-        frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_REASSOCIATION_RESPONSE)        
+        frameCtrl.set_type_n_subtype(dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_ASSOCIATION_RESPONSE)        
     # Frame Control Flags
     frameCtrl.set_fromDS(0)
     frameCtrl.set_toDS(0)
@@ -473,9 +473,12 @@ def generate_action_response(vbssid, dst_addr):
     return packet_str
 
 class WifiStaParams(object):
-    def __init__(self, buf=None):
+    def __init__(self, buf=None, reassoc=False):
         mgmt_frame = dot11.Dot11ManagementFrame(buf[2:])
-        assoc_req = dot11.Dot11ManagementAssociationRequest(mgmt_frame.get_frame_body())
+        if reassoc:
+            assoc_req = dot11.Dot11ManagementReassociationRequest(mgmt_frame.get_frame_body())
+        else:
+            assoc_req = dot11.Dot11ManagementAssociationRequest(mgmt_frame.get_frame_body())
         self.addr = mgmt_frame.get_source_address()
         self.supp_rates = assoc_req.get_supported_rates()
         self.listen_interval = assoc_req.get_listen_interval()

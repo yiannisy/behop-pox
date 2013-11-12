@@ -405,8 +405,8 @@ class WifiAuthenticateSwitch(EventMixin):
             self.raiseEvent(AssocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_REASSOC_REQ):
-            log.debug("Ignoring Reassociation Request...")
-            #params = WifiStaParams(packet.raw[rd_len:])
+            log.debug("Ignoring Reassociation Request from %s " % binascii.hexlify(ie.mgmt.src))
+            #params = WifiStaParams(packet.raw[rd_len:], reassoc=True)
             #self.raiseEvent(ReassocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
 
             
