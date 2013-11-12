@@ -291,7 +291,14 @@ class WifiAuthenticateSwitch(EventMixin):
             self.connection.removeListeners(self.listeners)
         self.connection = connection
         self.listeners = self.connection.addListeners(self)
+        # we also need to re-add flows as the switch will start from a clean-state.
+        self._set_simple_flow(WAN_PORT,self.wlan_port)
+        self._set_simple_flow(self.wlan_port,WAN_PORT)
+        self._set_simple_flow(WAN_PORT,of.OFPP_NORMAL,priority=2,ip_dst=connection.sock.getpeername()[0])
+        self._set_simple_flow(of.OFPP_LOCAL,of.OFPP_NORMAL, priority=2,ip_src=connection.sock.getpeername()[0])
 
+        # send a few more bytes in to capture all WiFi Header.
+        self.connection.send(of.ofp_set_config(miss_send_len=1024))        
 
     def is_whitelisted(self, addr):
         if addr in self.whitelisted_stas:
