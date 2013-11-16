@@ -21,6 +21,7 @@ from behop_config import *
 from wifi_params import *
 
 import hashlib
+from util import *
 
 log = core.getLogger("WifiMessenger")
 log_fsm = core.getLogger("WifiFSM")
@@ -485,17 +486,15 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         return b_aps
 
     def load_whitelisted_stas(self):
-        w_stas = []
-        f = open(WHITELIST_FNAME,'r')
-        for line in f.readlines():
-            if line.startswith('#'):
-                continue
-            w_stas.append(int(line.rstrip(), 16))
-        f.close()
-        log.info("Updated List of Whitelisted STAs:")
+        log.debug("Loading List of Whitelisted Stas:")
+        if (LOAD_WHITELIST_FROM_DB):
+            w_stas =  load_sta_whitelist_from_db()
+        else:
+            w_stas =  load_sta_whiltelist_from_file()
         for sta in w_stas:
-            log.info("%012x" % sta)
+            log.info("Whitelisted STA : %012x" % sta)
         return w_stas
+    
 
     def is_blacklisted(self, dpid):
         if dpid in self.blacklisted_aps:
