@@ -203,13 +203,16 @@ class BackhaulSwitch(EventMixin):
         self.transparent = transparent
         self.connection.addListeners(self)
         self.topo = BEHOP_TOPO
-        # all ports should go to the uplink to start with.
+        # all ports should go to the uplinks to start with (split mgmt and data traffic).
         for ap, ap_port in self.topo.items():
-            self._set_simple_flow(ap_port, [BACKHAUL_UPLINK])
-            self._set_simple_flow(BACKHAUL_UPLINK, [ap_port], mac_dst=EthAddr("%012x" % ap), priority=2)
+            self._set_simple_flow(ap_port, [BACKHAUL_DATA_UPLINK])
+            self._set_simple_flow(ap_port, [BACKHAUL_MGMT_UPLINK], mac_src=EthAddr("%012x" % ap), priority=2)
+            self._set_simple_flow(BACKHAUL_MGMT_UPLINK, [ap_port], mac_dst=EthAddr("%012x" % ap), priority=2)
         # add flow for broadcast
-        self._set_simple_flow(BACKHAUL_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
-        self._set_simple_flow(BACKHAUL_UPLINK, [], priority=1)
+        self._set_simple_flow(BACKHAUL_MGMT_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
+        self._set_simple_flow(BACKHAUL_MGMT_UPLINK, [], priority=1)
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], priority=1)
 
     def _handle_FlowRemoved(self, event):
         '''
@@ -225,7 +228,7 @@ class BackhaulSwitch(EventMixin):
             dur = event.ofp.duration_sec
             self.raiseEvent(HostTimeout(event.dpid, addr, packets, bytes, dur))
 
-    def _set_simple_flow(self,port_in, ports_out, priority=1,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None, idle_timeout=0):
+    def _set_simple_flow(self,port_in, ports_out, priority=1,mac_src=None,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None, idle_timeout=0):
         msg = of.ofp_flow_mod()
         msg.idle_timeout=idle_timeout
         msg.flags = of.OFPFF_SEND_FLOW_REM
@@ -233,6 +236,8 @@ class BackhaulSwitch(EventMixin):
         msg.match.in_port = port_in
         if (mac_dst):
             msg.match.dl_dst = mac_dst
+        if (mac_src):
+            msg.match.dl_src = mac_src
         if (ip_dst or ip_src):
             msg.match.dl_type = 0x0800
             if (ip_dst):
@@ -926,14 +931,14 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         '''
         wifi_ap = all_aps[dpid]
         if self.bh_switch:
-            self.bh_switch._set_simple_flow(BACKHAUL_UPLINK, [self.bh_switch.topo[dpid]], priority=2,
+            self.bh_switch._set_simple_flow(BACKHAUL_DATA_UPLINK, [self.bh_switch.topo[dpid]], priority=2,
                                             mac_dst=EthAddr(mac_to_str(addr)), idle_timeout = DEFAULT_HOST_TIMEOUT)
         self.raiseEvent(AddStation(dpid, wifi_ap.intf, addr, all_stations[addr].vbssid,all_stations[addr].aid,all_stations[addr].params, wifi_ap.ht_capabilities_info))
         
     def removeStation(self, dpid, addr):
         wifi_ap = all_aps[dpid]
         if self.bh_switch:
-            self.bh_switch._del_simple_flow(BACKHAUL_UPLINK,mac_dst=EthAddr(mac_to_str(addr)))
+            self.bh_switch._del_simple_flow(BACKHAUL_DATA_UPLINK,mac_dst=EthAddr(mac_to_str(addr)))
         self.raiseEvent(RemoveStation(dpid, wifi_ap.intf, addr))
 
     def update_bssidmask(self, dpid):
