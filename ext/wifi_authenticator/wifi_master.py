@@ -471,6 +471,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.next_aid = 0x0001
         self.blacklisted_aps = []
         self.whitelisted_stas = []
+        self.node_to_dpid = {}
         if USE_BLACKLIST == 1:
             self.blacklisted_aps = self.load_blacklisted_aps()
         if USE_WHITELIST == 1:
@@ -496,11 +497,12 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         log.debug("Loading List of Whitelisted Stas:")
         if (LOAD_WHITELIST_FROM_DB):
             w_stas =  load_sta_whitelist_from_db()
+            self.node_to_dpid = w_stas
         else:
             w_stas =  load_sta_whiltelist_from_file()
         for sta in w_stas:
             log.info("Whitelisted STA : %012x" % sta)
-        return w_stas
+        return w_stas.keys()
     
 
     def is_blacklisted(self, dpid):
@@ -576,20 +578,20 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         sta = all_stations[event.src_addr]
         if (sta.dpid != None and (sta.dpid != event.dpid)):
             return False
-        return ((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None))
+        return ((event.dpid == self.node_to_dpid[sta.addr]) and ((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None)))
 
     def is_valid_auth_request(self, event, sta):
         '''
         Checks if a sniffed authentication request is for us and comes from the expected AP.
         '''
-        return ((event.bssid == sta.vbssid) and (event.dpid == sta.dpid))
+        return ((event.dpid == self.node_to_dpid[sta.addr]) and ((event.bssid == sta.vbssid) and (event.dpid == sta.dpid)))
         
     def is_valid_assoc_request(self, event, sta):
         '''
         Checks if a sniffed association request is for us and comes from the expected AP.
         '''
         #log.debug("%s %s %s %s" % (event.bssid, sta.vbssid, event.dpid, sta.dpid))
-        return ((event.bssid == sta.vbssid) and (event.dpid == sta.dpid))
+        return ((event.dpid == self.node_to_dpid[sta.addr]) and ((event.bssid == sta.vbssid) and (event.dpid == sta.dpid)))
 
     def is_valid_disassoc_request(self, event, sta):
         '''

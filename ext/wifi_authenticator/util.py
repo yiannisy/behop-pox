@@ -7,9 +7,10 @@ def load_sta_whitelist_from_db(db=BEHOP_DB_FILE):
     conn = sqlite3.connect(db)
     c = conn.cursor()
 
-    c.execute("select addr from mac_user where opt_out == \"0\"")    
+    c.execute("select addr,dpid from mac_user_dpid where opt_out == \"0\"")    
     conn.commit()
-    w_stas = [int(x[0],16) for x in c.fetchall()]
+    w_stas = {int(x[0],16):int(x[1],16) for x in c.fetchall()}
+    print w_stas
     conn.close()
     return w_stas
 
