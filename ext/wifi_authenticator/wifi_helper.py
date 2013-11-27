@@ -7,6 +7,7 @@ import random
 from pox.core import core
 from behop_config import *
 from wifi_params import *
+from math import log10
 
 RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x0c\x3c\x14\x40\x01\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
 HT_CAPA_STR_BASE = "\x1b\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -29,6 +30,12 @@ def log_packet(packet, dpid):
         log_ltsta.error("cannot decode radiotap information.")
         return
     try:
+        snr = im_radiotap.get_dBm_ant_signal() - (-90)
+        noise = im_radiotap.get_dBm_ant_noise()
+    except:
+        log_ltsta.error("cannot get SNR/noise information.")
+
+    try:
         channel = im_radiotap.get_channel()[0]
         if channel < WLAN_2_GHZ_FREQ_MAX :
             band = '2.4GHz'
@@ -46,7 +53,7 @@ def log_packet(packet, dpid):
         log_ltsta.error("cannot obtain mgmt packet.")
         return
     if type_subtype == dot11.Dot11Types.DOT11_TYPE_MANAGEMENT_SUBTYPE_PROBE_REQUEST:
-        log_ltsta.debug("PROBE_REQ|%x|%s|%d|%s" % (dpid,addr,channel,band))
+        log_ltsta.debug("PROBE_REQ|%x|%s|%d|%s|%d" % (dpid,addr,channel,band,snr))
         
 
 

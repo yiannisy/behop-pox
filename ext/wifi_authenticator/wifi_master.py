@@ -384,6 +384,8 @@ class WifiAuthenticateSwitch(EventMixin):
 
         # try to get an impacket version of the packet.
         try:
+            im_radiotap = rdtap_decoder.decode(packet.raw)
+            snr = im_radiotap.get_dBm_ant_signal() - (-90)
             im_pkt = dot11.Dot11(aBuffer=packet.raw[rd_len:], FCS_at_end=False)
         except Exception as e:
             log.error("Impacket conversion failed.")
@@ -412,8 +414,8 @@ class WifiAuthenticateSwitch(EventMixin):
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_REASSOC_REQ):
             log.debug("Ignoring Reassociation Request from %s " % binascii.hexlify(ie.mgmt.src))
-            #params = WifiStaParams(packet.raw[rd_len:], reassoc=True)
-            #self.raiseEvent(ReassocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
+            params = WifiStaParams(packet.raw[rd_len:], reassoc=True)
+            self.raiseEvent(ReassocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
 
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DISASSOC):
