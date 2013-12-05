@@ -208,6 +208,9 @@ class BackhaulSwitch(EventMixin):
             self._set_simple_flow(ap_port, [BACKHAUL_DATA_UPLINK])
             self._set_simple_flow(ap_port, [BACKHAUL_MGMT_UPLINK], mac_src=EthAddr("%012x" % ap), priority=2)
             self._set_simple_flow(BACKHAUL_MGMT_UPLINK, [ap_port], mac_dst=EthAddr("%012x" % ap), priority=2)
+            # drop packets destined to the AP coming from the data port...
+            # workaround buggy dhcp leases from rescomp's DHCP.
+            self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % ap), priority=2)
         # add flow for broadcast
         self._set_simple_flow(BACKHAUL_MGMT_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
         self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
@@ -413,7 +416,6 @@ class WifiAuthenticateSwitch(EventMixin):
             self.raiseEvent(AssocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_REASSOC_REQ):
-            log.debug("Ignoring Reassociation Request from %s " % binascii.hexlify(ie.mgmt.src))
             params = WifiStaParams(packet.raw[rd_len:], reassoc=True)
             self.raiseEvent(ReassocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
 
@@ -670,7 +672,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         (probably need to maintain unique AID for each station...)
         '''
         cur_id = self.next_aid
-        if self.next_aid == 0x3fff:
+        if self.next_aid == 0x7d7:
             self.next_aid = 0x0001
         else:
             self.next_aid += 1
