@@ -211,6 +211,11 @@ class BackhaulSwitch(EventMixin):
             # drop packets destined to the AP coming from the data port...
             # workaround buggy dhcp leases from rescomp's DHCP.
             self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % ap), priority=2)
+            # do not allow anything coming from the LAN port.
+            lan_addr = get_lan_from_wan(ap)
+            self._set_simple_flow(ap_port, [], mac_src=EthAddr("%012x" % lan_addr), priority=2)
+            self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % lan_addr), priority=2)
+
         # add flow for broadcast
         self._set_simple_flow(BACKHAUL_MGMT_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
         self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)

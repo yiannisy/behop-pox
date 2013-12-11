@@ -2,6 +2,10 @@ import sqlite3
 from behop_config import *
 from wifi_params import *
 
+def get_lan_from_wan(wan_addr):
+    lan = (wan_addr - 1) | 0x020000000000
+    return lan
+
 def load_sta_whitelist_from_db(db=BEHOP_DB_FILE):
     
     conn = sqlite3.connect(db)
