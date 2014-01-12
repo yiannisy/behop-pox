@@ -29,7 +29,7 @@ log_mob = core.getLogger("WifiMobility")
 
 all_stations = {}
 all_aps = {}
-phase_out = [False]
+phase_out = [True]
 
 
 class ProbeRequest(Event):
@@ -190,6 +190,9 @@ class Station(object):
         self.state = 'SNIFF'
         log_fsm.debug("%012x : NONE -> %s" % (self.addr, self.state))
 
+    def __str__(self):
+        return "%x|%s|%x|%x\n" % (self.addr,self.state,self.dpid,self.vbssid)
+
 class BackhaulSwitch(EventMixin):
     '''
     This should be a learning switch. NEC throws an error, 
@@ -212,9 +215,13 @@ class BackhaulSwitch(EventMixin):
             # workaround buggy dhcp leases from rescomp's DHCP.
             self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % ap), priority=2)
             # do not allow anything coming from the LAN port.
-            lan_addr = get_lan_from_wan(ap)
+            lan_addr = get_lan_from_wan_1(ap)
             self._set_simple_flow(ap_port, [], mac_src=EthAddr("%012x" % lan_addr), priority=2)
             self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % lan_addr), priority=2)
+            lan_addr = get_lan_from_wan_2(ap)
+            self._set_simple_flow(ap_port, [], mac_src=EthAddr("%012x" % lan_addr), priority=2)
+            self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % lan_addr), priority=2)
+
 
         # add flow for broadcast
         self._set_simple_flow(BACKHAUL_MGMT_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
@@ -290,7 +297,7 @@ class WifiAuthenticateSwitch(EventMixin):
         self._set_simple_flow(WAN_PORT,self.wlan_port)
         self._set_simple_flow(self.wlan_port,WAN_PORT)
         self._set_simple_flow(WAN_PORT,of.OFPP_NORMAL,priority=2,ip_dst=connection.sock.getpeername()[0])
-        self._set_simple_flow(of.OFPP_LOCAL,of.OFPP_NORMAL, priority=2,ip_src=connection.sock.getpeername()[0])
+        self._set_simple_flow(of.OFPP_LOCAL,WAN_PORT, priority=2,ip_src=connection.sock.getpeername()[0])
 
         # send a few more bytes in to capture all WiFi Header.
         self.connection.send(of.ofp_set_config(miss_send_len=1024))        
@@ -308,8 +315,8 @@ class WifiAuthenticateSwitch(EventMixin):
         # we also need to re-add flows as the switch will start from a clean-state.
         self._set_simple_flow(WAN_PORT,self.wlan_port)
         self._set_simple_flow(self.wlan_port,WAN_PORT)
-        self._set_simple_flow(WAN_PORT,of.OFPP_NORMAL,priority=2,ip_dst=connection.sock.getpeername()[0])
-        self._set_simple_flow(of.OFPP_LOCAL,of.OFPP_NORMAL, priority=2,ip_src=connection.sock.getpeername()[0])
+        self._set_simple_flow(WAN_PORT,of.OFPP_LOCAL,priority=2,ip_dst=connection.sock.getpeername()[0])
+        self._set_simple_flow(of.OFPP_LOCAL,WAN_PORT, priority=2,ip_src=connection.sock.getpeername()[0])
 
         # send a few more bytes in to capture all WiFi Header.
         self.connection.send(of.ofp_set_config(miss_send_len=1024))        
@@ -368,7 +375,7 @@ class WifiAuthenticateSwitch(EventMixin):
     def _handle_PacketIn(self, event):        
         # first log this packet for node's information
         if event.port in self.mon_ports:
-            log_packet(event.parsed, event.dpid)
+            log_packet(event.parsed, event.dpid, event.port)
 
         if ((self.is_blacklisted) or (event.port != self.mon_port) or (phase_out[0])):
             return
