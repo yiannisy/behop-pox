@@ -834,7 +834,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
                           (sta.addr, sta.state, new_state, sta.vbssid, sta.dpid))
             sta.state = new_state
         else:
-            log.warning("invalid assoc request")
+            log.warning("invalid assoc request from %012x (%012x,%012x)" % (sta.addr,event.dpid,event.bssid))
 
     def _handle_ReassocRequest(self, event):
         if event.src_addr in all_stations.keys():
@@ -853,11 +853,13 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
                           (sta.addr, sta.state, new_state, sta.vbssid, sta.dpid))
             sta.state = new_state
         else:
-            log.warning("invalid reassoc request")
+            log.warning("invalid reassoc request from %012x (%012x,%012x)" % (sta.addr,event.dpid, event.bssid))
 
 
     def _handle_DisassocRequest(self, event):
         # we only care about stations already registered...
+        log_fsm.debug("%012x : UNKNOWN -> UNKNOWN (DisassocReq, src:%012x, dpid:%012x)" %
+                      (event.src_addr, event.src_addr, event.dpid))
         if event.src_addr in all_stations.keys():
             sta = all_stations[event.src_addr]
         else:
@@ -873,6 +875,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
 
     def _handle_DeauthRequest(self, event):
         # we only care about stations already registered...
+        log_fsm.debug("%012x : UNKNOWN -> UNKNOWN (DeauthReq, src:%012x, dpid:%012x)" %
+                      (event.src_addr, event.src_addr, event.dpid))
         if event.src_addr in all_stations.keys():
             sta = all_stations[event.src_addr]
         else:
