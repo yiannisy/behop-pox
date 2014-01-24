@@ -30,7 +30,6 @@ def load_sta_whitelist_from_file(fname=WHITELIST_FNAME):
         if line.startswith('#'):
             continue
         vals = string.split(line.rstrip(),',')
-        print vals
         w_stas[int(vals[0],16)] = int(vals[1],16)
     f.close()
     return w_stas
