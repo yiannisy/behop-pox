@@ -206,28 +206,11 @@ class BackhaulSwitch(EventMixin):
         self.transparent = transparent
         self.connection.addListeners(self)
         self.topo = BEHOP_TOPO
-        # all ports should go to the uplinks to start with (split mgmt and data traffic).
-        for ap, ap_port in self.topo.items():
-            self._set_simple_flow(ap_port, [BACKHAUL_DATA_UPLINK])
-            self._set_simple_flow(ap_port, [BACKHAUL_MGMT_UPLINK], mac_src=EthAddr("%012x" % ap), priority=2)
-            self._set_simple_flow(BACKHAUL_MGMT_UPLINK, [ap_port], mac_dst=EthAddr("%012x" % ap), priority=2)
-            # drop packets destined to the AP coming from the data port...
-            # workaround buggy dhcp leases from rescomp's DHCP.
-            self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % ap), priority=2)
-            # do not allow anything coming from the LAN port.
-            lan_addr = get_lan_from_wan_1(ap)
-            self._set_simple_flow(ap_port, [], mac_src=EthAddr("%012x" % lan_addr), priority=2)
-            self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % lan_addr), priority=2)
-            lan_addr = get_lan_from_wan_2(ap)
-            self._set_simple_flow(ap_port, [], mac_src=EthAddr("%012x" % lan_addr), priority=2)
-            self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % lan_addr), priority=2)
+        if IS_GATES_NETWORK == True:
+            self._setup_gates_switch()
+        else:
+            self._setup_studio5_switch()
 
-
-        # add flow for broadcast
-        self._set_simple_flow(BACKHAUL_MGMT_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
-        self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
-        self._set_simple_flow(BACKHAUL_MGMT_UPLINK, [], priority=1)
-        self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], priority=1)
 
     def _handle_FlowRemoved(self, event):
         '''
@@ -242,6 +225,50 @@ class BackhaulSwitch(EventMixin):
             bytes = event.ofp.byte_count
             dur = event.ofp.duration_sec
             self.raiseEvent(HostTimeout(event.dpid, addr, packets, bytes, dur))
+
+    def _setup_studio5_switch(self):
+        # all ports should go to the uplinks to start with (split mgmt and data traffic).
+        for ap, ap_port in self.topo.items():            
+            self._set_simple_flow(ap_port, [BACKHAUL_DATA_UPLINK])
+            self._set_simple_flow(ap_port, [BACKHAUL_MGMT_UPLINK], mac_src=EthAddr("%012x" % ap), priority=2)
+            self._set_simple_flow(BACKHAUL_MGMT_UPLINK, [ap_port], mac_dst=EthAddr("%012x" % ap), priority=2)
+            # drop packets destined to the AP coming from the data port...
+            # workaround buggy dhcp leases from rescomp's DHCP.
+            self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % ap), priority=2)
+            # do not allow anything coming from the LAN port.
+            lan_addr = get_lan_from_wan_1(ap)
+            self._set_simple_flow(ap_port, [], mac_src=EthAddr("%012x" % lan_addr), priority=2)
+            self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % lan_addr), priority=2)
+            lan_addr = get_lan_from_wan_2(ap)
+            self._set_simple_flow(ap_port, [], mac_src=EthAddr("%012x" % lan_addr), priority=2)
+            self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % lan_addr), priority=2)
+            
+                
+        # add flow for broadcast
+        self._set_simple_flow(BACKHAUL_MGMT_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
+        self._set_simple_flow(BACKHAUL_MGMT_UPLINK, [], priority=1)
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], priority=1)
+
+    def _setup_gates_switch(self):
+        # all ports should go to the uplink to start with
+        for ap, ap_port in self.topo.items():            
+            self._set_simple_flow(ap_port, [BACKHAUL_DATA_UPLINK])
+            self._set_simple_flow(BACKHAUL_DATA_UPLINK, [ap_port], mac_dst=EthAddr("%012x" % ap), priority=2)
+            # do not allow anything coming from the LAN port.
+            lan_addr = get_lan_from_wan_1(ap)
+            self._set_simple_flow(ap_port, [], mac_src=EthAddr("%012x" % lan_addr), priority=2)
+            self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % lan_addr), priority=2)
+            lan_addr = get_lan_from_wan_2(ap)
+            self._set_simple_flow(ap_port, [], mac_src=EthAddr("%012x" % lan_addr), priority=2)
+            self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], mac_dst=EthAddr("%012x" % lan_addr), priority=2)
+            
+                
+        # add flow for broadcast
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], priority=1)
+
+
 
     def _set_simple_flow(self,port_in, ports_out, priority=1,mac_src=None,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None, idle_timeout=0):
         msg = of.ofp_flow_mod()
@@ -379,7 +406,6 @@ class WifiAuthenticateSwitch(EventMixin):
 
         if ((self.is_blacklisted) or (event.port != self.mon_port) or (phase_out[0])):
             return
-
         packet = event.parsed
         rdtap = dpkt.radiotap.Radiotap(packet.raw)
         rd_len = rdtap.length >> 8
@@ -390,13 +416,11 @@ class WifiAuthenticateSwitch(EventMixin):
             snr = rdtap.ant_sig.db - (-90)
         else:
             snr = 0
-
         try:
             ie = dpkt.ieee80211.IEEE80211(packet.raw[rd_len:])
         except NeedData:
             #log.debug("Cannot debug packet...")
             return
-
         # try to get an impacket version of the packet.
         try:
             im_radiotap = rdtap_decoder.decode(packet.raw)
@@ -406,7 +430,6 @@ class WifiAuthenticateSwitch(EventMixin):
             log.error("Impacket conversion failed.")
             log.error(e)
             return
-        
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_BEACON):
             return
 
@@ -416,7 +439,6 @@ class WifiAuthenticateSwitch(EventMixin):
             if  (not self.is_whitelisted(src_addr)):
                 self.log_blacklisted_sta_packet(ie, event)
                 return
-
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_PROBE_REQ):
             self.raiseEvent(ProbeRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), snr, ie.ssid.data))
 
@@ -540,7 +562,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             w_stas =  load_sta_whitelist_from_db()
             self.node_to_dpid = w_stas
         else:
-            w_stas =  load_sta_whiltelist_from_file()
+            w_stas =  load_sta_whitelist_from_file()
+            self.node_to_dpid = w_stas
         for sta in w_stas:
             log.info("Whitelisted STA : %012x" % sta)
         return w_stas.keys()
@@ -725,6 +748,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         As this needs to happen early (probe-request/response) we should free-up the
         nodes that don't follow-up with auth/assoc request.
         '''
+        if src_addr == 0xe899c4696a97:
+            return 0x060000000001
         if self.vbssid_map.has_key(src_addr):
             vbssid = self.vbssid_map[src_addr]
         else:
@@ -812,7 +837,6 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         '''
         if event.src_addr not in all_stations.keys():
             all_stations[event.src_addr] = Station(event.src_addr)
-
         sta = all_stations[event.src_addr]
 
         self.check_sta_switch(event, sta)
@@ -898,7 +922,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             log_fsm.debug("%012x : %s -> %s (DisassocReq, dpid:%012x)" %
                           (event.src_addr, old_state, new_state, event.dpid))
         else:
-            log.warning("invalid disassoc request")
+            log.warning("invalid disassoc request from %x" % event.src_addr)
 
     def _handle_DeauthRequest(self, event):
         # we only care about stations already registered...
@@ -915,7 +939,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             log_fsm.debug("%012x : %s -> %s (DeauthReq, dpid:%012x)" %
                           (event.src_addr, old_state, new_state, event.dpid))
         else:
-            log.warning("invalid deauth request")
+            log.warning("invalid deauth request from %x" % event.src_addr)
 
     def _handle_ActionEvent(self, event):
         log.debug("handling action")
@@ -1045,7 +1069,6 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.update_bssidmask(event.dpid)
         self.addStation(event.dpid, event.src_addr)
         self.sendReassocResponse(event)
-
 
     def auth_to_assoc(self, event):
         '''
