@@ -1136,8 +1136,12 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         packet_str = generate_action_response(vbssid, event.src_addr, wifi_ap.current_channel)
         all_aps[event.dpid].send_packet_out(packet_str)
 
+def list_stations():
+    print "\n".join(["%012x:%s" % (sta.addr,sta.state) for sta in all_stations.values()])
+
 def launch( transparent=False):
     core.Interactive.variables['behop_stations'] = all_stations
     core.Interactive.variables['behop_aps'] = all_aps
     core.Interactive.variables['behop_phase_out'] = phase_out
+    core.Interactive.variables['list_stations'] = list_stations
     core.registerNew(WifiAuthenticator, str_to_bool(transparent))
