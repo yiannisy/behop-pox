@@ -98,11 +98,12 @@ class DisassocRequest(Event):
     @src_addr : host's address
     @bssid : the bssid from which the disassoc is reported.
     '''
-    def __init__(self, dpid, src_addr, bssid):
+    def __init__(self, dpid, src_addr, bssid, reason):
         Event.__init__(self)
         self.dpid = dpid
         self.src_addr = src_addr
         self.bssid = bssid
+        self.reason = reason
 
     def __str__(self):
         return "dpid:%012x | src_addr:%012x | bssid:%012x" % (self.dpid, self.src_addr, self.bssid)
@@ -113,11 +114,12 @@ class DeauthRequest(Event):
     @src_addr : host's address
     @bssid : the bssid from which the disassoc is reported.
     '''
-    def __init__(self, dpid, src_addr, bssid):
+    def __init__(self, dpid, src_addr, bssid, reason):
         Event.__init__(self)
         self.dpid = dpid
         self.src_addr = src_addr
         self.bssid = bssid
+        self.reason = reason
 
     def __str__(self):
         return "dpid:%012x | src_addr:%012x | bssid:%012x" % (self.dpid, self.src_addr, self.bssid)
@@ -457,11 +459,12 @@ class WifiAuthenticateSwitch(EventMixin):
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DISASSOC):
             self.raiseEvent(DisassocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src), 16), 
-                                            int(binascii.hexlify(ie.mgmt.bssid), 16)))
+                                            int(binascii.hexlify(ie.mgmt.bssid), 16),ie.diassoc.reason))
+            log.debug("Disassoc with status code %d" % ie.diassoc.reason)
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DEAUTH):
             self.raiseEvent(DeauthRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src), 16), 
-                                            int(binascii.hexlify(ie.mgmt.bssid), 16)))
+                                            int(binascii.hexlify(ie.mgmt.bssid), 16),ie.deauth.reason))
 
                             
 
@@ -488,11 +491,13 @@ class WifiAuthenticateSwitch(EventMixin):
             log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (DisAssocReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
                           (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
                            int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))
+            log.debug("Disassoc with status code %d" % ie.diassoc.reason)
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DEAUTH):
             log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (DeauthReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
                           (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
                            int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))        
+            log.debug("Deauth with status code %d" % ie.deauth.reason)
        
     def send_packet_out(self, msg_raw):
         msg = of.ofp_packet_out(in_port=of.OFPP_NONE)
@@ -909,8 +914,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
 
     def _handle_DisassocRequest(self, event):
         # we only care about stations already registered...
-        log_fsm.debug("%012x : UNKNOWN -> UNKNOWN (DisassocReq, src:%012x, dpid:%012x)" %
-                      (event.src_addr, event.src_addr, event.dpid))
+        log_fsm.debug("%012x : UNKNOWN -> UNKNOWN (DisassocReq, src:%012x, dpid:%012x, reason:%x)" %
+                      (event.src_addr, event.src_addr, event.dpid, event.reason))
         if event.src_addr in all_stations.keys():
             sta = all_stations[event.src_addr]
         else:
@@ -919,15 +924,15 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         if self.is_valid_disassoc_request(event, sta):
             old_state = sta.state
             new_state = self.processFSM(sta.state, 'DisassocReq', sta)
-            log_fsm.debug("%012x : %s -> %s (DisassocReq, dpid:%012x)" %
-                          (event.src_addr, old_state, new_state, event.dpid))
+            log_fsm.debug("%012x : %s -> %s (DisassocReq, dpid:%012x,reason:%x)" %
+                          (event.src_addr, old_state, new_state, event.dpid, event.reason))
         else:
             log.warning("invalid disassoc request from %x" % event.src_addr)
 
     def _handle_DeauthRequest(self, event):
         # we only care about stations already registered...
-        log_fsm.debug("%012x : UNKNOWN -> UNKNOWN (DeauthReq, src:%012x, dpid:%012x)" %
-                      (event.src_addr, event.src_addr, event.dpid))
+        log_fsm.debug("%012x : UNKNOWN -> UNKNOWN (DeauthReq, src:%012x, dpid:%012x, reason:%x)" %
+                      (event.src_addr, event.src_addr, event.dpid, event.reason))
         if event.src_addr in all_stations.keys():
             sta = all_stations[event.src_addr]
         else:
@@ -936,8 +941,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         if self.is_valid_deauth_request(event, sta):
             old_state = sta.state
             new_state = self.processFSM(sta.state, 'DeauthReq', sta)
-            log_fsm.debug("%012x : %s -> %s (DeauthReq, dpid:%012x)" %
-                          (event.src_addr, old_state, new_state, event.dpid))
+            log_fsm.debug("%012x : %s -> %s (DeauthReq, dpid:%012x,reason:%x)" %
+                          (event.src_addr, old_state, new_state, event.dpid, event.reason))
         else:
             log.warning("invalid deauth request from %x" % event.src_addr)
 
