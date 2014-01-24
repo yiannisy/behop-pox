@@ -2,6 +2,7 @@ VBSSID_RANGE_MIN = 1
 VBSSID_RANGE_MAX = 40
 
 SERVING_SSID = 'Stanford Residences'
+IS_GATES_NETWORK = False
 
 # topology
 BACKHAUL_SWITCH = 0x020012e298a5ce
