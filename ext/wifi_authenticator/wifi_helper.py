@@ -16,7 +16,7 @@ HT_CAPA_STR_BASE = "\x1b\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00
 
 
 HOMENETS_OUI = "020000" # needs to be better defined.
-BEACON_INTERVAL = 1000
+BEACON_INTERVAL = 200
 DEFAULT_CHANNEL = 11
 
 log = core.getLogger("WifiMaster")
