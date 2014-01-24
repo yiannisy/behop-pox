@@ -460,7 +460,7 @@ class WifiAuthenticateSwitch(EventMixin):
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DISASSOC):
             self.raiseEvent(DisassocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src), 16), 
                                             int(binascii.hexlify(ie.mgmt.bssid), 16),ie.diassoc.reason))
-            log.debug("Disassoc with status code %d" % ie.diassoc.reason)
+            log.debug("Disassoc with status code %x" % ie.diassoc.reason)
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DEAUTH):
             self.raiseEvent(DeauthRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src), 16), 
@@ -491,13 +491,13 @@ class WifiAuthenticateSwitch(EventMixin):
             log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (DisAssocReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
                           (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
                            int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))
-            log.debug("Disassoc with status code %d" % ie.diassoc.reason)
+            log.debug("Disassoc with status code %x" % ie.diassoc.reason)
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DEAUTH):
             log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (DeauthReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
                           (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
                            int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))        
-            log.debug("Deauth with status code %d" % ie.deauth.reason)
+            log.debug("Deauth with status code %x" % ie.deauth.reason)
        
     def send_packet_out(self, msg_raw):
         msg = of.ofp_packet_out(in_port=of.OFPP_NONE)
