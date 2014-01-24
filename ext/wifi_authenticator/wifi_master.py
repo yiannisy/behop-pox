@@ -414,6 +414,7 @@ class WifiAuthenticateSwitch(EventMixin):
         if (ie.type == dpkt.ieee80211.MGMT_TYPE):
             src_addr = int(binascii.hexlify(ie.mgmt.src), 16)
             if  (not self.is_whitelisted(src_addr)):
+                self.log_blacklisted_sta_packet(ie, event)
                 return
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_PROBE_REQ):
@@ -444,6 +445,32 @@ class WifiAuthenticateSwitch(EventMixin):
 
         #if (ie.type == 0 and ie.subtype != 8):
         #    print "Received %x from %s" % (ie.subtype, binascii.hexlify(ie.mgmt.src))
+
+    def log_blacklisted_sta_packet(self, ie, event):
+        if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_AUTH):
+            log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (AuthReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
+                          (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
+                           int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))
+            
+        if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_ASSOC_REQ):
+            log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (AssocReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
+                          (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
+                           int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))
+
+        if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_REASSOC_REQ):
+            log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (ReAssocReq,dst:%012x,dpid:%012x,bssid:%012x)" % 
+                          (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
+                           int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))
+            
+        if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DISASSOC):
+            log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (DisAssocReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
+                          (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
+                           int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))
+
+        if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DEAUTH):
+            log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (DeauthReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
+                          (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
+                           int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))        
        
     def send_packet_out(self, msg_raw):
         msg = of.ofp_packet_out(in_port=of.OFPP_NONE)
