@@ -844,7 +844,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             all_stations[event.src_addr] = Station(event.src_addr)
         sta = all_stations[event.src_addr]
 
-        self.check_sta_switch(event, sta)
+        #self.check_sta_switch(event, sta)
             
         # check if this is a valid probe-req to process.
         # this needs more sophistication : we could sniff on irrelevant probe-reqs
@@ -864,7 +864,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             all_stations[event.src_addr] = Station(event.src_addr)
             sta = all_stations[event.src_addr]
 
-        self.check_sta_switch(event, sta)
+        #self.check_sta_switch(event, sta)
 
         if self.is_valid_auth_request(event, sta):
             sta.last_seen = time.time()
@@ -880,7 +880,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             all_stations[event.src_addr] = Station(event.src_addr)
             sta = all_stations[event.src_addr]
 
-        self.check_sta_switch(event, sta)
+        #self.check_sta_switch(event, sta)
 
         if self.is_valid_assoc_request(event, sta) and self.is_valid_assoc_params(event, sta):
             sta.params = event.params
@@ -899,7 +899,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             all_stations[event.src_addr] = Station(event.src_addr)
             sta = all_stations[event.src_addr]
 
-        self.check_sta_switch(event, sta)
+        #self.check_sta_switch(event, sta)
 
         if self.is_valid_assoc_request(event, sta) and self.is_valid_assoc_params(event, sta):
             sta.params = event.params
