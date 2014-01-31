@@ -12,6 +12,7 @@ import sys
 
 RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x0c\x3c\x14\x40\x01\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
 HT_CAPA_STR_BASE = "\x1b\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+COUNTRY_STR = "\x55\x53\x20\x24\x04\x11\x95\x05\x1e\x00"
 
 
 
@@ -182,6 +183,8 @@ def generate_probe_response(vbssid, ssid, dst_addr, channel, capa, ht_capa):
     else:
         baconFrame.set_supported_rates(WLAN_5_GHZ_SUPP_RATES)
     baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.ERP_INFO,"\x02")
+    # Country Info
+    baconFrame._set_element(7,COUNTRY_STR)
     # HT Capabilities
     ht_capa_info_str = struct.pack('H',ht_capa)
     ht_capa_rest_str = HT_CAPA_STR_BASE
@@ -415,6 +418,8 @@ def generate_beacon(vbssid, ssid, channel, capa, ht_capa):
     else:
         baconFrame.set_supported_rates(WLAN_5_GHZ_SUPP_RATES)
     baconFrame._set_element(dot11.DOT11_MANAGEMENT_ELEMENTS.ERP_INFO,"\x02")
+    # Country code
+    baconFrame._set_element(7,COUNTRY_STR)
     # HT Capabilities
     ht_capa_info_str = struct.pack('H',ht_capa)
     ht_capa_rest_str = HT_CAPA_STR_BASE
