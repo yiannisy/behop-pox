@@ -182,6 +182,20 @@ class UpdateBssidmask(Event):
         self.intf = intf
         self.bssidmask = bssidmask
 
+class AddVBeacon(Event):
+    def __init__(self, dpid, intf, vbssid):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.intf = intf
+        self.vbssid = vbssid
+
+class DelVBeacon(Event):
+    def __init__(self, dpid, intf, vbssid):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.intf = intf
+        self.vbssid = vbssid
+
 class Station(object):
     def __init__(self, addr):
         self.addr = addr # mac address of station
@@ -303,7 +317,8 @@ class BackhaulSwitch(EventMixin):
 
 class WifiAuthenticateSwitch(EventMixin):
     _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, ReassocRequest, AddStation, RemoveStation, 
-                              DeauthRequest, DisassocRequest, ActionEvent])
+                              DeauthRequest, DisassocRequest, ActionEvent,
+                              AddVBeacon,DelVBeacon])
     
     def __init__(self, connection, transparent, is_blacklisted = False, whitelisted_stas = None, channel = 11):
         EventMixin.__init__(self)
@@ -516,7 +531,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
     * Talks to the Information Base (IB) and decides whether to move a station and where.
     * Monitors stations, checks for timeouts, etc.
     '''
-    _eventMixin_events = set([AddStation, RemoveStation, MoveStation, UpdateBssidmask, SnrSummary])
+    _eventMixin_events = set([AddStation, RemoveStation, MoveStation, UpdateBssidmask, SnrSummary,AddVBeacon,DelVBeacon])
 
     def __init__(self, transparent):
         '''
@@ -608,6 +623,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         if self.vbssid_map.has_key(sta.addr):
             # this might not work...
             self.removeStation(sta.dpid, sta.addr)
+            self.delVBeacon(sta.dpid,sta.vbssid)
             del self.vbssid_map[sta.addr]
             self.vbssid_pool.append(sta.vbssid)
         dpid = sta.dpid
@@ -1001,6 +1017,20 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
                     continue
                 self.check_sta_move(sta, sta_summary)
 
+    def addVBeacon(self, dpid,vbssid):
+        '''
+        Installs a vbeacon to a dpid.
+        '''
+        wifi_ap = all_aps[dpid]
+        self.raiseEvent(AddVBeacon(dpid,wifi_ap.intf,vbssid))
+
+    def delVBeacon(self, dpid,vbssid):
+        '''
+        Installs a vbeacon to a dpid.
+        '''
+        wifi_ap = all_aps[dpid]
+        self.raiseEvent(DelVBeacon(dpid,wifi_ap.intf,vbssid))
+
     def addStation(self, dpid, addr):
         '''
         Adds a station to a dpid. This means :
@@ -1055,6 +1085,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         all_stations[addr].last_snr = event.snr
         all_stations[addr].aid = self.get_next_aid()
         self.update_bssidmask(dpid)
+        self.addVBeacon(dpid,all_stations[addr].vbssid)
         self.sendProbeResponse(event)
 
     def reinstallSendProbeResponse(self, event):

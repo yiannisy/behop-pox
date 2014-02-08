@@ -12,10 +12,15 @@ log = core.getLogger("WifiOvsDB5")
 G_RATES = [1,2,6,11,12,18,24,36,48,54]
 G_RATES_LEN = len(G_RATES)
 
-GET_DPID = {"method":"transact", "params":["Open_vSwitch", {"op":"select","table":"Bridge","where":[],"columns":["datapath_id"]}], "id":1}
+GET_DPID = {"method":"transact", "params":["Open_vSwitch", {"op":"select","table":"Bridge",
+                                                            "where":[],"columns":["datapath_id"]}], "id":1}
 ADD_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiSta","row":{"addr":None,"vbssid":None,"intf":None,"ht_capa":None,"sup_rates":["set",[]]}}],"id":1}
 DEL_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiSta","where":[]}],"id":2}
 UPDATE_BSSIDMASK = {"method":"transact", "params":["Wifi_vSwitch",{"op":"update","table":"WifiConfig","where":[],"row":{"bssidmask":None,"intf":None}}],"id":1}
+ADD_VBEACON = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiBeacon","row":{"vbssid":None,"intf":None,}}],"id":1}
+DEL_VBEACON = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiBeacon","where":[]}],"id":2}
+
+
 
 class SnrSummary(Event):
     def __init__(self, summary):
@@ -89,6 +94,8 @@ class OvsDBBot(ChannelBot, EventMixin):
                 log.debug("Removing existing stations")
                 log.debug(DEL_STATION)
                 event.con.send(DEL_STATION)
+                log.debug(DEL_VBEACON)
+                event.con.send(DEL_VBEACON)
             except (KeyError, TypeError) as e:
                 pass
 
@@ -158,6 +165,30 @@ class OvsDBBot(ChannelBot, EventMixin):
         if self.connections.has_key(event.dpid):
             con = self.connections[event.dpid]
             con.send(rem_json)
+        else:
+            log.debug("key not found...")
+            for key in self.connections.keys():
+                log.debug("DPID : %x" % key)
+
+    def _handle_AddVBeacon(self, event):
+        add_json = ADD_VBEACON.copy()
+        _vbssid = "%012x" % event.vbssid
+        add_json["params"][1]["row"]["vbssid"] = _vbssid
+        add_json["params"][1]["row"]["intf"] = event.intf
+        log.debug("Adding VBeacon for VBSSID %x (%x)" % (event.vbssid, event.dpid))
+        if self.connections.has_key(event.dpid):
+            con = self.connections[event.dpid]
+            con.send(add_json)
+                  
+            
+    def _handle_DelVBeacon(self, event):
+        del_json = DEL_VBEACON.copy()
+        _vbssid = "%012x" % event.vbssid
+        del_json["params"][1]["where"] == [["vbssid","==",_vbssid],["intf","==",event.intf]]
+        log.debug("Removing beacon for VBSSID %x (%x)" % (event.vbssid,event.dpid))
+        if self.connections.has_key(event.dpid):
+            con = self.connections[event.dpid]
+            con.send(del_json)
         else:
             log.debug("key not found...")
             for key in self.connections.keys():
