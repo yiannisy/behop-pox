@@ -9,6 +9,7 @@ from behop_config import *
 from wifi_params import *
 from math import log10
 import sys
+from pox.lib.revent import *
 
 RADIOTAP_STR = '\x00\x00\x18\x00\x6e\x48\x00\x00\x00\x0c\x3c\x14\x40\x01\xa8\x81\x02\x00\x00\x00\x00\x00\x00\x00'
 HT_CAPA_STR_BASE = "\x1b\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -17,7 +18,7 @@ COUNTRY_STR = "\x55\x53\x20\x24\x04\x11\x95\x05\x1e\x00"
 
 
 HOMENETS_OUI = "020000" # needs to be better defined.
-BEACON_INTERVAL = 200
+BEACON_INTERVAL = 100
 DEFAULT_CHANNEL = 11
 
 log = core.getLogger("WifiMaster")
@@ -549,6 +550,8 @@ class AssociationFSM(FSM):
         self.add_transition('RESERVED','AuthReq',self.sendAuthResponse,'AUTH')
         self.add_transition('RESERVED','AssocReq',self.reinstallSendAssocResponse,'ASSOC')
         self.add_transition('RESERVED','ReassocReq',self.reinstallSendReassocResponse,'ASSOC')
+        self.add_transition('RESERVED','DisassocReq',None,'RESERVED')
+        self.add_transition('RESERVED','DeauthReq',None,'RESERVED')
         self.add_transition('AUTH','ProbeReq',self.reinstallSendProbeResponse,'AUTH')
         self.add_transition('AUTH','AuthReq',self.reinstallSendAuthResponse,'AUTH')
         self.add_transition('AUTH','AssocReq',self.auth_to_assoc,'ASSOC')
@@ -586,4 +589,169 @@ class AssociationFSM(FSM):
 
     def reinstallSendAssocResponse(self, *args):
         pass
+
+
+class ProbeRequest(Event):
+    '''Event raised by an AP when a probe request is received.
+    @dpid : the AP reporting the request
+    @src_addr : host's address
+    @snr: the snr of the packet
+    '''
+    def __init__(self, dpid, src_addr, snr, ssid):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.src_addr = src_addr
+        self.snr = snr
+        self.ssid = ssid
+    
+class AuthRequest(Event):
+    '''Event raised by an AP when a probe request is received.
+    @dpid : the AP reporting the request
+    @src_addr : host's address
+    @bssid : the bssid for the authentication
+    @snr: the snr of the packet
+    '''
+    def __init__(self, dpid, src_addr, bssid, snr):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.src_addr = src_addr
+        self.bssid = bssid
+        self.snr = snr
+
+class AssocRequest(Event):
+    '''Event raised by an AP when a probe request is received.
+    @dpid : the AP reporting the request
+    @src_addr : host's address
+    @bssid : the bssid for the assocation
+    @snr: the snr of the packet
+    @params : the Wifi params
+    '''
+    def __init__(self, dpid, src_addr, bssid, snr, params):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.src_addr = src_addr
+        self.bssid = bssid
+        self.snr = snr
+        self.params = params
+
+class ReassocRequest(Event):
+    '''Event raised by an AP when a probe request is received.
+    @dpid : the AP reporting the request
+    @src_addr : host's address
+    @bssid : the bssid for the assocation
+    @snr: the snr of the packet
+    @params : the Wifi params
+    '''
+    def __init__(self, dpid, src_addr, bssid, snr, params):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.src_addr = src_addr
+        self.bssid = bssid
+        self.snr = snr
+        self.params = params
+
+
+class DisassocRequest(Event):
+    '''Event raised by an AP when a disassoc request is received.
+    @dpid : the AP reporting the request.
+    @src_addr : host's address
+    @bssid : the bssid from which the disassoc is reported.
+    '''
+    def __init__(self, dpid, src_addr, bssid, reason):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.src_addr = src_addr
+        self.bssid = bssid
+        self.reason = reason
+
+    def __str__(self):
+        return "dpid:%012x | src_addr:%012x | bssid:%012x" % (self.dpid, self.src_addr, self.bssid)
+
+class DeauthRequest(Event):
+    '''Event raised by an AP when a deauth request is received.
+    @dpid : the AP reporting the request.
+    @src_addr : host's address
+    @bssid : the bssid from which the disassoc is reported.
+    '''
+    def __init__(self, dpid, src_addr, bssid, reason):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.src_addr = src_addr
+        self.bssid = bssid
+        self.reason = reason
+
+    def __str__(self):
+        return "dpid:%012x | src_addr:%012x | bssid:%012x" % (self.dpid, self.src_addr, self.bssid)
+
+class ActionEvent(Event):
+    '''Event raised by an AP when it receives an action packet.
+    @dpid : the AP reporting the request.
+    @src_addr : host's address
+    '''
+    def __init__(self, dpid, src_addr, bssid):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.src_addr = src_addr
+        self.bssid = bssid
+
+
+class HostTimeout(Event):
+    '''Event raised by the backhaul switch when the downlink flow
+    for a host timeouts.
+    @dst_addr : The address of the host.
+    @dpid : The dpid of the switch.
+    '''
+    def __init__(self, dpid, dst_addr, packets, bytes, dur):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.dst_addr = int(dst_addr.toStr(separator=''),16)
+        self.packets = packets
+        self.bytes = bytes
+        self.dur = dur
+
+class AddStation(Event):
+    def __init__(self, dpid, intf, src_addr, vbssid, aid, params, ht_capa):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.intf = intf
+        self.src_addr = src_addr
+        self.vbssid = vbssid
+        self.aid = aid
+        self.params = params
+        self.ht_capabilities_info = ht_capa
+
+class RemoveStation(Event):
+    def __init__(self, dpid, intf, src_addr):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.intf = intf
+        self.src_addr = src_addr
+
+class MoveStation(Event):
+    def __init__(self, addr, old_dpid, new_dpid):
+        Event.__init__(self)
+        self.addr = addr
+        self.old_dpid = old_dpid
+        self.new_dpid = new_dpid
+
+class UpdateBssidmask(Event):
+    def __init__(self, dpid, intf, bssidmask):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.intf = intf
+        self.bssidmask = bssidmask
+
+class AddVBeacon(Event):
+    def __init__(self, dpid, intf, vbssid):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.intf = intf
+        self.vbssid = vbssid
+
+class DelVBeacon(Event):
+    def __init__(self, dpid, intf, vbssid):
+        Event.__init__(self)
+        self.dpid = dpid
+        self.intf = intf
+        self.vbssid = vbssid
 
