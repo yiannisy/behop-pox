@@ -245,8 +245,6 @@ class WifiAuthenticateSwitch(EventMixin):
             self.mon_port = WLAN_5_GHZ_MON_PORT
             self.wlan_port = WLAN_5_GHZ_WLAN_PORT
 
-
-
     def _set_simple_flow(self,port_in,port_out, priority=1,ip_src=None, ip_dst=None,queue_id=None):
         msg = of.ofp_flow_mod()
         msg.idle_timeout=0
@@ -423,7 +421,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         f.close()
         log.info("Loading List of Blacklisted APs:")
         for ap in b_aps:
-            log.info("%012x" % ap)
+            log.info("Blacklisted AP : %012x" % ap)
         return b_aps
 
     def load_whitelisted_stas(self):
