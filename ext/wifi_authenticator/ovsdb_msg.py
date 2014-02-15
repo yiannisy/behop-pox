@@ -104,6 +104,7 @@ class OvsDBBot(ChannelBot, EventMixin):
                 for node in nodes:
                     vbssid = core.WifiAuthenticator.vbssid_map[node]
                     bssidmask &= ~(vbssid)
+                    log.debug("Adding VBeacon for node %012x (VBSSID:%012x|DPID:%012x)" % (node,vbssid,dpid))
                     self._handle_AddVBeacon(AddVBeacon(dpid,intf,vbssid))
                 log.debug("BSSIDMASK for %012x (%s) : %08x" % (dpid,intf,bssidmask))
                 self._handle_UpdateBssidmask(UpdateBssidmask(dpid,intf,bssidmask))
@@ -114,8 +115,8 @@ class OvsDBBot(ChannelBot, EventMixin):
                         log.debug("Reinstalling state for associated station %012x" % (node))
                         station = core.WifiAuthenticator.all_stations[node]
                         ap = core.WifiAuthenticator.all_aps[dpid]
-                        self._handle_AddStation(dpid,intf,node,station.vbssid,station.aid,
-                                                station.params,ap.ht_capabilities_info)
+                        self._handle_AddStation(AddStation(dpid,intf,node,station.vbssid,station.aid,
+                                                station.params,ap.ht_capabilities_info))
             except (KeyError, TypeError) as e:
                 pass
 
@@ -195,7 +196,6 @@ class OvsDBBot(ChannelBot, EventMixin):
         _vbssid = "%012x" % event.vbssid
         add_json["params"][1]["row"]["vbssid"] = _vbssid
         add_json["params"][1]["row"]["intf"] = event.intf
-        log.debug("Adding VBeacon for VBSSID %x (%x)" % (event.vbssid, event.dpid))
         if self.connections.has_key(event.dpid):
             con = self.connections[event.dpid]
             con.send(add_json)
