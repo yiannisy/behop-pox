@@ -107,9 +107,15 @@ class OvsDBBot(ChannelBot, EventMixin):
                     self._handle_AddVBeacon(AddVBeacon(dpid,intf,vbssid))
                 log.debug("BSSIDMASK for %012x (%s) : %08x" % (dpid,intf,bssidmask))
                 self._handle_UpdateBssidmask(UpdateBssidmask(dpid,intf,bssidmask))
-
-
-
+                # Go through the nodes and reinstall state if this node is associated.
+                # (used to cover the case where ovs in the AP restarts and state gets desynced.
+                for node in nodes:
+                    if core.WifiAuthenticator.all_stations.has_key(node) and core.WifiAuthenticator.all_stations[node].state == 'ASSOC':
+                        log.debug("Reinstalling state for associated station %012x" % (node))
+                        station = core.WifiAuthenticator.all_stations[node]
+                        ap = core.WifiAuthenticator.all_aps[dpid]
+                        self._handle_AddStation(dpid,intf,node,station.vbssid,station.aid,
+                                                station.params,ap.ht_capabilities_info)
             except (KeyError, TypeError) as e:
                 pass
 

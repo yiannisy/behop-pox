@@ -388,6 +388,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         core.openflow.addListeners(self)
         #core.openflow_discovery.addListenerByName("LinkEvent", self._handle_LinkEvent)
         self.all_aps = all_aps
+        self.all_stations = all_stations
         self.transparent = transparent
         self.bh_switch = None
         self.vbssid_base = 0x020000000000
@@ -490,9 +491,9 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         if self.vbssid_map.has_key(sta.addr):
             # this might not work...
             self.removeStation(sta.dpid, sta.addr)
-            self.delVBeacon(sta.dpid,sta.vbssid)
+            #self.delVBeacon(sta.dpid,sta.vbssid)
             #del self.vbssid_map[sta.addr]
-            self.vbssid_pool.append(sta.vbssid)
+            #self.vbssid_pool.append(sta.vbssid)
         dpid = sta.dpid
         del all_stations[sta.addr]
         if update_bssidmask:
@@ -684,11 +685,11 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             if not all_aps.has_key(event.dpid) or event.connection != all_aps[event.dpid].connection:
                 log.debug("Will not remove AP state---AP unkown or connection already updated...")
                 return
-            log.debug("Removing AP state and associated stations...")
-            for sta in all_stations.values():
-                if sta.dpid == event.dpid:
-                    self.delete_station(sta)
-            del all_aps[event.dpid]
+            #log.debug("Removing AP state and associated stations...")
+            #for sta in all_stations.values():
+            #    if sta.dpid == event.dpid:
+            #        self.delete_station(sta)
+            #del all_aps[event.dpid]
 
     def _handle_LinkEvent(self, event):
         if event.added == True:
@@ -887,14 +888,14 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         Installs a vbeacon to a dpid.
         '''
         wifi_ap = all_aps[dpid]
-        #self.raiseEvent(AddVBeacon(dpid,wifi_ap.intf,vbssid))
+        self.raiseEvent(AddVBeacon(dpid,wifi_ap.intf,vbssid))
 
     def delVBeacon(self, dpid,vbssid):
         '''
         Installs a vbeacon to a dpid.
         '''
         wifi_ap = all_aps[dpid]
-        #self.raiseEvent(DelVBeacon(dpid,wifi_ap.intf,vbssid))
+        self.raiseEvent(DelVBeacon(dpid,wifi_ap.intf,vbssid))
 
     def addStation(self, dpid, addr):
         '''
@@ -950,7 +951,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         all_stations[addr].last_snr = event.snr
         all_stations[addr].aid = self.get_next_aid()
         self.update_bssidmask(dpid)
-        self.addVBeacon(dpid,all_stations[addr].vbssid)
+        #self.addVBeacon(dpid,all_stations[addr].vbssid)
         self.sendProbeResponse(event)
 
     def reinstallSendProbeResponse(self, event):
