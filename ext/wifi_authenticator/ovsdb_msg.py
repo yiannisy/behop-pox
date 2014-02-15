@@ -5,9 +5,10 @@ Adds/Removes Stations from Access Points.
 from pox.core import core
 from pox.messenger import *
 from pox.lib.recoco import Timer
-from wifi_helper import get_ht_capa_info, byte_array_to_hex_str
+from wifi_helper import *
 
-log = core.getLogger("WifiOvsDB5")
+
+log = core.getLogger("WifiOvsDB")
 
 G_RATES = [1,2,6,11,12,18,24,36,48,54]
 G_RATES_LEN = len(G_RATES)
@@ -55,7 +56,6 @@ class AggService(EventMixin):
         self.con.removeListeners(self.listeners)
         self.parent.clients.pop(self.con, None)
     
-
 class AggBot(ChannelBot):
     def _init(self, extra):
         self.clients = {}
@@ -90,12 +90,26 @@ class OvsDBBot(ChannelBot, EventMixin):
             try:
                 dpid = int(msg["result"][0]["rows"][0]["datapath_id"],16)
                 self.connections[dpid] = event.con
-                log.debug("Appending OVSDB connection for %x" % dpid)
-                log.debug("Removing existing stations")
-                log.debug(DEL_STATION)
-                event.con.send(DEL_STATION)
-                log.debug(DEL_VBEACON)
+                log.debug("Appending OVSDB connection for %012x" % dpid)
+                log.debug("Clients for dpid %012x" % dpid)
+                log.debug(core.WifiAuthenticator.node_to_dpid)
+                nodes = [node for node in core.WifiAuthenticator.node_to_dpid.keys() if core.WifiAuthenticator.node_to_dpid[node] == dpid]
+                bssidmask = 0xffffffffffff
+                intf = core.WifiAuthenticator.all_aps[dpid].intf
+                log.debug("Deleting all existing beacons")
                 event.con.send(DEL_VBEACON)
+                log.debug("Removing existing stations")
+                event.con.send(DEL_STATION)
+                self._handle_UpdateBssidmask(UpdateBssidmask(dpid,intf,bssidmask))
+                for node in nodes:
+                    vbssid = core.WifiAuthenticator.vbssid_map[node]
+                    bssidmask &= ~(vbssid)
+                    self._handle_AddVBeacon(AddVBeacon(dpid,intf,vbssid))
+                log.debug("BSSIDMASK for %012x (%s) : %08x" % (dpid,intf,bssidmask))
+                self._handle_UpdateBssidmask(UpdateBssidmask(dpid,intf,bssidmask))
+
+
+
             except (KeyError, TypeError) as e:
                 pass
 
@@ -203,6 +217,8 @@ class OvsDBBot(ChannelBot, EventMixin):
         if self.connections.has_key(event.dpid):
             con = self.connections[event.dpid]
             con.send(upd_json)
+        else:
+            log.debug("Cannot find connection handler for %012x" % dpid)
                   
         
 class MessengerManager(object):
