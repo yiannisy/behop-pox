@@ -68,8 +68,19 @@ class OvsDBBot(ChannelBot, EventMixin):
     def __init__(self, channel, nexus = None, weak = False, extra = {}):
         ChannelBot.__init__(self, channel, nexus, weak, extra)
         self.connections = {}
+        self.ovsdb_ids = {}
         self.listenTo(core.WifiAuthenticator)
         log.debug("initialized OVSDBBot")
+
+    def send_ovsdb_msg(self, dpid, msg):
+        con = self.connections[dpid]
+        ovs_id = self.ovsdb_ids[dpid]
+        if self.ovsdb_ids[dpid] == 1024:
+            self.ovsdb_ids[dpid] = 2
+        else:
+            self.ovsdb_ids[dpid] +=1 
+        msg['id'] = ovs_id
+        con.send(msg)
 
     def _handle_ChannelCreate(self, event):
         log.debug("Channel Created!")
@@ -89,6 +100,7 @@ class OvsDBBot(ChannelBot, EventMixin):
             try:
                 dpid = int(msg["result"][0]["rows"][0]["datapath_id"],16)
                 self.connections[dpid] = event.con
+                self.ovsdb_ids[dpid] = 1
                 log.debug("Appending OVSDB connection for %012x" % dpid)
                 log.debug("Clients for dpid %012x" % dpid)
                 log.debug(core.WifiAuthenticator.node_to_dpid)
@@ -96,9 +108,9 @@ class OvsDBBot(ChannelBot, EventMixin):
                 bssidmask = 0xffffffffffff
                 intf = core.WifiAuthenticator.all_aps[dpid].intf
                 log.debug("Deleting all existing beacons")
-                event.con.send(DEL_VBEACON)
+                self.send_ovsdb_msg(dpid,DEL_VBEACON)
                 log.debug("Removing existing stations")
-                event.con.send(DEL_STATION)
+                self.send_ovsdb_msg(dpid, DEL_STATION)
                 self._handle_UpdateBssidmask(UpdateBssidmask(dpid,intf,bssidmask))
                 for node in nodes:
                     vbssid = core.WifiAuthenticator.vbssid_map[node]
@@ -170,8 +182,7 @@ class OvsDBBot(ChannelBot, EventMixin):
         log.debug("ADD-STATION : %s" % add_json)
         log.debug("Adding Station %s to %x" % (_addr, event.dpid))
         if self.connections.has_key(event.dpid):
-            con = self.connections[event.dpid]
-            con.send(add_json)
+            self.send_ovsdb_msg(event.dpid,add_json)
         else:
             log.debug("key not found...")
             for key in self.connections.keys():
@@ -183,8 +194,7 @@ class OvsDBBot(ChannelBot, EventMixin):
         rem_json["params"][1]["where"] = [["addr","==",_addr],["intf","==",event.intf]]
         log.debug("Removing Station %x from AP %x" % (event.src_addr, event.dpid))
         if self.connections.has_key(event.dpid):
-            con = self.connections[event.dpid]
-            con.send(rem_json)
+            self.send_ovsdb_msg(event.dpid,rem_json)
         else:
             log.debug("key not found...")
             for key in self.connections.keys():
@@ -196,9 +206,7 @@ class OvsDBBot(ChannelBot, EventMixin):
         add_json["params"][1]["row"]["vbssid"] = _vbssid
         add_json["params"][1]["row"]["intf"] = event.intf
         if self.connections.has_key(event.dpid):
-            con = self.connections[event.dpid]
-            con.send(add_json)
-                  
+            self.send_ovsdb_msg(event.dpid,add_json)                  
             
     def _handle_DelVBeacon(self, event):
         del_json = DEL_VBEACON.copy()
@@ -206,8 +214,7 @@ class OvsDBBot(ChannelBot, EventMixin):
         del_json["params"][1]["where"] == [["vbssid","==",_vbssid],["intf","==",event.intf]]
         log.debug("Removing beacon for VBSSID %x (%x)" % (event.vbssid,event.dpid))
         if self.connections.has_key(event.dpid):
-            con = self.connections[event.dpid]
-            con.send(del_json)
+            self.send_ovsdb_msg(event.dpid,del_json)
         else:
             log.debug("key not found...")
             for key in self.connections.keys():
@@ -220,8 +227,7 @@ class OvsDBBot(ChannelBot, EventMixin):
         upd_json["params"][1]["row"]["intf"] = event.intf
         log.debug("Updating BSSIDMASK for AP %x : %x" % (event.dpid, event.bssidmask))
         if self.connections.has_key(event.dpid):
-            con = self.connections[event.dpid]
-            con.send(upd_json)
+            self.send_ovsdb_msg(event.dpid,upd_json)
         else:
             log.debug("Cannot find connection handler for %012x" % dpid)
                           
