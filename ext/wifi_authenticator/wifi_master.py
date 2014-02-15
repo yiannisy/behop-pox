@@ -459,6 +459,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         for channel in set(BEHOP_CHANNELS.values()):
             dpids = [dpid for dpid in BEHOP_CHANNELS.keys() if BEHOP_CHANNELS[dpid] == channel]
             nodes = sorted([node for node in self.node_to_dpid.keys() if self.node_to_dpid[node] in dpids])
+            log.debug("%d nodes for channel %d" % (len(nodes),channel))
             node_prefix = 0x1
             log.debug("Assigning VBSSIDs for channel %d" % channel)
             for node in nodes:
@@ -1031,8 +1032,12 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         packet_str = generate_action_response(vbssid, event.src_addr, wifi_ap.current_channel)
         all_aps[event.dpid].send_packet_out(packet_str)
 
-def list_stations():
-    print "\n".join(["%012x:%s" % (sta.addr,sta.state) for sta in all_stations.values()])
+def list_stations(state=None):
+    if state == None:
+        stas = all_stations.values()
+    else:
+        stas = [sta for sta in all_stations.values() if sta.state == state]
+    print "\n".join(["%012x:%012x:%012x:%s" % (sta.addr,sta.vbssid,sta.dpid,sta.state) for sta in stas])
 
 def launch( transparent=False):
     core.Interactive.variables['behop_stations'] = all_stations
