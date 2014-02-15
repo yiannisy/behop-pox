@@ -8,7 +8,7 @@ from pox.lib.util import dpid_to_str as mac_to_str
 from pox.lib.util import str_to_bool
 import time
 from pox.lib.recoco import Timer
-from ovsdb_msg import SnrSummary,AggService, AggBot
+from ovsdb_msg import SnrSummary,AggService, AggBot, OvsDBBot
 from pox.forwarding.l2_learning import LearningSwitch
 
 import dpkt, binascii
@@ -32,169 +32,6 @@ all_aps = {}
 phase_out = [True]
 
 
-class ProbeRequest(Event):
-    '''Event raised by an AP when a probe request is received.
-    @dpid : the AP reporting the request
-    @src_addr : host's address
-    @snr: the snr of the packet
-    '''
-    def __init__(self, dpid, src_addr, snr, ssid):
-        Event.__init__(self)
-        self.dpid = dpid
-        self.src_addr = src_addr
-        self.snr = snr
-        self.ssid = ssid
-    
-class AuthRequest(Event):
-    '''Event raised by an AP when a probe request is received.
-    @dpid : the AP reporting the request
-    @src_addr : host's address
-    @bssid : the bssid for the authentication
-    @snr: the snr of the packet
-    '''
-    def __init__(self, dpid, src_addr, bssid, snr):
-        Event.__init__(self)
-        self.dpid = dpid
-        self.src_addr = src_addr
-        self.bssid = bssid
-        self.snr = snr
-
-class AssocRequest(Event):
-    '''Event raised by an AP when a probe request is received.
-    @dpid : the AP reporting the request
-    @src_addr : host's address
-    @bssid : the bssid for the assocation
-    @snr: the snr of the packet
-    @params : the Wifi params
-    '''
-    def __init__(self, dpid, src_addr, bssid, snr, params):
-        Event.__init__(self)
-        self.dpid = dpid
-        self.src_addr = src_addr
-        self.bssid = bssid
-        self.snr = snr
-        self.params = params
-
-class ReassocRequest(Event):
-    '''Event raised by an AP when a probe request is received.
-    @dpid : the AP reporting the request
-    @src_addr : host's address
-    @bssid : the bssid for the assocation
-    @snr: the snr of the packet
-    @params : the Wifi params
-    '''
-    def __init__(self, dpid, src_addr, bssid, snr, params):
-        Event.__init__(self)
-        self.dpid = dpid
-        self.src_addr = src_addr
-        self.bssid = bssid
-        self.snr = snr
-        self.params = params
-
-
-class DisassocRequest(Event):
-    '''Event raised by an AP when a disassoc request is received.
-    @dpid : the AP reporting the request.
-    @src_addr : host's address
-    @bssid : the bssid from which the disassoc is reported.
-    '''
-    def __init__(self, dpid, src_addr, bssid, reason):
-        Event.__init__(self)
-        self.dpid = dpid
-        self.src_addr = src_addr
-        self.bssid = bssid
-        self.reason = reason
-
-    def __str__(self):
-        return "dpid:%012x | src_addr:%012x | bssid:%012x" % (self.dpid, self.src_addr, self.bssid)
-
-class DeauthRequest(Event):
-    '''Event raised by an AP when a deauth request is received.
-    @dpid : the AP reporting the request.
-    @src_addr : host's address
-    @bssid : the bssid from which the disassoc is reported.
-    '''
-    def __init__(self, dpid, src_addr, bssid, reason):
-        Event.__init__(self)
-        self.dpid = dpid
-        self.src_addr = src_addr
-        self.bssid = bssid
-        self.reason = reason
-
-    def __str__(self):
-        return "dpid:%012x | src_addr:%012x | bssid:%012x" % (self.dpid, self.src_addr, self.bssid)
-
-class ActionEvent(Event):
-    '''Event raised by an AP when it receives an action packet.
-    @dpid : the AP reporting the request.
-    @src_addr : host's address
-    '''
-    def __init__(self, dpid, src_addr, bssid):
-        Event.__init__(self)
-        self.dpid = dpid
-        self.src_addr = src_addr
-        self.bssid = bssid
-
-
-class HostTimeout(Event):
-    '''Event raised by the backhaul switch when the downlink flow
-    for a host timeouts.
-    @dst_addr : The address of the host.
-    @dpid : The dpid of the switch.
-    '''
-    def __init__(self, dpid, dst_addr, packets, bytes, dur):
-        Event.__init__(self)
-        self.dpid = dpid
-        self.dst_addr = int(dst_addr.toStr(separator=''),16)
-        self.packets = packets
-        self.bytes = bytes
-        self.dur = dur
-
-class AddStation(Event):
-    def __init__(self, dpid, intf, src_addr, vbssid, aid, params, ht_capa):
-        Event.__init__(self)
-        self.dpid = dpid
-        self.intf = intf
-        self.src_addr = src_addr
-        self.vbssid = vbssid
-        self.aid = aid
-        self.params = params
-        self.ht_capabilities_info = ht_capa
-
-class RemoveStation(Event):
-    def __init__(self, dpid, intf, src_addr):
-        Event.__init__(self)
-        self.dpid = dpid
-        self.intf = intf
-        self.src_addr = src_addr
-
-class MoveStation(Event):
-    def __init__(self, addr, old_dpid, new_dpid):
-        Event.__init__(self)
-        self.addr = addr
-        self.old_dpid = old_dpid
-        self.new_dpid = new_dpid
-
-class UpdateBssidmask(Event):
-    def __init__(self, dpid, intf, bssidmask):
-        Event.__init__(self)
-        self.dpid = dpid
-        self.intf = intf
-        self.bssidmask = bssidmask
-
-class AddVBeacon(Event):
-    def __init__(self, dpid, intf, vbssid):
-        Event.__init__(self)
-        self.dpid = dpid
-        self.intf = intf
-        self.vbssid = vbssid
-
-class DelVBeacon(Event):
-    def __init__(self, dpid, intf, vbssid):
-        Event.__init__(self)
-        self.dpid = dpid
-        self.intf = intf
-        self.vbssid = vbssid
 
 class Station(object):
     def __init__(self, addr):
@@ -331,6 +168,8 @@ class WifiAuthenticateSwitch(EventMixin):
         self.mon_ports = [WLAN_2_GHZ_MON_PORT, WLAN_5_GHZ_MON_PORT]
         self.set_capabilities()
 
+        self.preinstall_stas()
+
         self.listeners = connection.addListeners(self)
         # Setup default behavior
         # Switch traffic between WAN <-> WLAN port
@@ -374,6 +213,12 @@ class WifiAuthenticateSwitch(EventMixin):
         if self.current_channel <= WLAN_2_GHZ_CHANNEL_MAX:
             return True
         return False
+
+    def preinstall_stas(self):
+        '''
+        Set basic properties of the AP at connection time.
+        '''
+        # Set the bssidmask
                               
     def set_capabilities(self):
         '''
@@ -542,6 +387,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.agg_msnger = AggBot(core.MessengerNexus.get_channel("MON_IB"), extra={'parent':self})
         core.openflow.addListeners(self)
         #core.openflow_discovery.addListenerByName("LinkEvent", self._handle_LinkEvent)
+        self.all_aps = all_aps
         self.transparent = transparent
         self.bh_switch = None
         self.vbssid_base = 0x020000000000
@@ -559,6 +405,9 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             self.blacklisted_aps = self.load_blacklisted_aps()
         if USE_WHITELIST == 1:
             self.whitelisted_stas = self.load_whitelisted_stas()
+        self.set_vbssid_map()
+
+
 
     def load_topology(self):
         f = open(TOPOLOGY_FNAME,'r')
@@ -602,6 +451,24 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             ap.whitelisted_stas = self.whitelisted_stas 
             ap.is_blacklisted = self.is_blacklisted(dpid)                    
 
+    def set_vbssid_map(self):
+        '''
+        Sets a static map for station <-> vbssid.
+        '''
+        band_prefix = 0x060000000000 # 5GHz only for now
+        channel_prefix = 0x1000000000
+        for channel in set(BEHOP_CHANNELS.values()):
+            dpids = [dpid for dpid in BEHOP_CHANNELS.keys() if BEHOP_CHANNELS[dpid] == channel]
+            nodes = sorted([node for node in self.node_to_dpid.keys() if self.node_to_dpid[node] in dpids])
+            node_prefix = 0x1
+            log.debug("Assigning VBSSIDs for channel %d" % channel)
+            for node in nodes:
+                self.vbssid_map[node] = band_prefix | channel_prefix | node_prefix
+                node_prefix = node_prefix << 1
+            channel_prefix = channel_prefix << 1
+        for node,vbssid in self.vbssid_map.items():
+            log.debug("%012x:%012x" % (node,vbssid))
+
     def set_timer(self):
         '''
         Setup timer for stations timeout.
@@ -624,7 +491,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             # this might not work...
             self.removeStation(sta.dpid, sta.addr)
             self.delVBeacon(sta.dpid,sta.vbssid)
-            del self.vbssid_map[sta.addr]
+            #del self.vbssid_map[sta.addr]
             self.vbssid_pool.append(sta.vbssid)
         dpid = sta.dpid
         del all_stations[sta.addr]
@@ -769,8 +636,6 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         As this needs to happen early (probe-request/response) we should free-up the
         nodes that don't follow-up with auth/assoc request.
         '''
-        if src_addr == 0xe899c4696a97:
-            return 0x060000000001
         if self.vbssid_map.has_key(src_addr):
             vbssid = self.vbssid_map[src_addr]
         else:
@@ -1022,14 +887,14 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         Installs a vbeacon to a dpid.
         '''
         wifi_ap = all_aps[dpid]
-        self.raiseEvent(AddVBeacon(dpid,wifi_ap.intf,vbssid))
+        #self.raiseEvent(AddVBeacon(dpid,wifi_ap.intf,vbssid))
 
     def delVBeacon(self, dpid,vbssid):
         '''
         Installs a vbeacon to a dpid.
         '''
         wifi_ap = all_aps[dpid]
-        self.raiseEvent(DelVBeacon(dpid,wifi_ap.intf,vbssid))
+        #self.raiseEvent(DelVBeacon(dpid,wifi_ap.intf,vbssid))
 
     def addStation(self, dpid, addr):
         '''
@@ -1055,7 +920,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         for sta in all_stations.values():
             if sta.dpid == dpid:
                 bssidmask &= ~(sta.vbssid ^ BASE_HW_ADDRESS)
-        self.raiseEvent(UpdateBssidmask(dpid, wifi_ap.intf, bssidmask))
+        #self.raiseEvent(UpdateBssidmask(dpid, wifi_ap.intf, bssidmask))
 
     def _handle_HostTimeout(self, event):
         '''
