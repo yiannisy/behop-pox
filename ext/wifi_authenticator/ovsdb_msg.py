@@ -7,7 +7,6 @@ from pox.messenger import *
 from pox.lib.recoco import Timer
 from wifi_helper import *
 
-
 log = core.getLogger("WifiOvsDB")
 
 G_RATES = [1,2,6,11,12,18,24,36,48,54]
@@ -17,9 +16,9 @@ GET_DPID = {"method":"transact", "params":["Open_vSwitch", {"op":"select","table
                                                             "where":[],"columns":["datapath_id"]}], "id":1}
 ADD_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiSta","row":{"addr":None,"vbssid":None,"intf":None,"ht_capa":None,"sup_rates":["set",[]]}}],"id":1}
 DEL_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiSta","where":[]}],"id":2}
-UPDATE_BSSIDMASK = {"method":"transact", "params":["Wifi_vSwitch",{"op":"update","table":"WifiConfig","where":[],"row":{"bssidmask":None,"intf":None}}],"id":1}
-ADD_VBEACON = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiBeacon","row":{"vbssid":None,"intf":None,}}],"id":1}
-DEL_VBEACON = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiBeacon","where":[]}],"id":2}
+UPDATE_BSSIDMASK = {"method":"transact", "params":["Wifi_vSwitch",{"op":"update","table":"WifiConfig","where":[],"row":{"bssidmask":None,"intf":None}}],"id":3}
+ADD_VBEACON = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiBeacon","row":{"vbssid":None,"intf":None,}}],"id":4}
+DEL_VBEACON = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiBeacon","where":[]}],"id":5}
 
 
 
@@ -225,8 +224,7 @@ class OvsDBBot(ChannelBot, EventMixin):
             con.send(upd_json)
         else:
             log.debug("Cannot find connection handler for %012x" % dpid)
-                  
-        
+                          
 class MessengerManager(object):
     def __init__(self):
         core.listen_to_dependencies(self)
