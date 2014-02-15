@@ -1034,7 +1034,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
 
 def list_stations(state=None):
     if state == None:
-        stas = all_stations.values()
+        stas = [sta for sta in all_stations.values()]
     else:
         stas = [sta for sta in all_stations.values() if sta.state == state]
     print "\n".join(["%012x:%012x:%012x:%s" % (sta.addr,sta.vbssid,sta.dpid,sta.state) for sta in stas])
