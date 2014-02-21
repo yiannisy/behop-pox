@@ -123,7 +123,7 @@ class BackhaulSwitch(EventMixin):
 
 
 
-    def _set_simple_flow(self,port_in, ports_out, priority=1,mac_src=None,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None, idle_timeout=0):
+    def _set_simple_flow(self,port_in, ports_out, priority=1,mac_src=None,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None, dl_type=0x0800,idle_timeout=0):
         msg = of.ofp_flow_mod()
         msg.idle_timeout=idle_timeout
         msg.flags = of.OFPFF_SEND_FLOW_REM
@@ -134,7 +134,7 @@ class BackhaulSwitch(EventMixin):
         if (mac_src):
             msg.match.dl_src = mac_src
         if (ip_dst or ip_src):
-            msg.match.dl_type = 0x0800
+            msg.match.dl_type = dl_type
             if (ip_dst):
                 msg.match.nw_dst = ip_dst
             if (ip_src):
@@ -181,6 +181,8 @@ class WifiAuthenticateSwitch(EventMixin):
         self._set_simple_flow(self.wlan_port,WAN_PORT)
         self._set_simple_flow(WAN_PORT,of.OFPP_NORMAL,priority=2,ip_dst=connection.sock.getpeername()[0])
         self._set_simple_flow(of.OFPP_LOCAL,WAN_PORT, priority=2,ip_src=connection.sock.getpeername()[0])
+        # Allow arp packets with the AP's local IP address as destination.
+        self._set_simple_flow(WAN_PORT, of.OFPP_NORMAL,priority=2,dl_type=0x0806,ip_dst=connection.sock.getpeername()[0])
 
         # send a few more bytes in to capture all WiFi Header.
         self.connection.send(of.ofp_set_config(miss_send_len=1024))        
@@ -245,13 +247,13 @@ class WifiAuthenticateSwitch(EventMixin):
             self.mon_port = WLAN_5_GHZ_MON_PORT
             self.wlan_port = WLAN_5_GHZ_WLAN_PORT
 
-    def _set_simple_flow(self,port_in,port_out, priority=1,ip_src=None, ip_dst=None,queue_id=None):
+    def _set_simple_flow(self,port_in,port_out, priority=1,ip_src=None, ip_dst=None,queue_id=None,dl_type=0x0800):
         msg = of.ofp_flow_mod()
         msg.idle_timeout=0
         msg.priority = priority
         msg.match.in_port = port_in
         if (ip_dst or ip_src):
-            msg.match.dl_type = 0x0800
+            msg.match.dl_type = dl_type
             if (ip_dst):
                 msg.match.nw_dst = ip_dst
             if (ip_src):
