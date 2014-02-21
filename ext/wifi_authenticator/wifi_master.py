@@ -1043,7 +1043,10 @@ def list_stations(state=None):
         stas = [sta for sta in all_stations.values()]
     else:
         stas = [sta for sta in all_stations.values() if sta.state == state]
-    print "\n".join(["%012x:%012x:%012x:%s" % (sta.addr,sta.vbssid,sta.dpid,sta.state) for sta in stas])
+    idx = 1
+    for sta in stas:
+        print "%d. %012x:%012x:%012x:%s" % (idx, sta.addr,sta.vbssid,sta.dpid,sta.state)
+        idx += 1
 
 def launch( transparent=False):
     core.Interactive.variables['behop_stations'] = all_stations
