@@ -183,6 +183,7 @@ class WifiAuthenticateSwitch(EventMixin):
         self._set_simple_flow(of.OFPP_LOCAL,WAN_PORT, priority=2,ip_src=connection.sock.getpeername()[0])
         # Allow arp packets with the AP's local IP address as destination.
         self._set_simple_flow(WAN_PORT, of.OFPP_NORMAL,priority=2,dl_type=0x0806,ip_dst=connection.sock.getpeername()[0],nw_proto = 1)
+        self._set_simple_flow(of.OFPP_LOCAL, WAN_PORT,priority=2,dl_type=0x0806,ip_src=connection.sock.getpeername()[0],nw_proto = 2)
 
         # send a few more bytes in to capture all WiFi Header.
         self.connection.send(of.ofp_set_config(miss_send_len=1024))        
@@ -204,6 +205,8 @@ class WifiAuthenticateSwitch(EventMixin):
         self._set_simple_flow(of.OFPP_LOCAL,WAN_PORT, priority=2,ip_src=connection.sock.getpeername()[0])
         # Allow arp packets with the AP's local IP address as destination.
         self._set_simple_flow(WAN_PORT, of.OFPP_NORMAL,priority=2,dl_type=0x0806,ip_dst=connection.sock.getpeername()[0],nw_proto = 1)
+        self._set_simple_flow(of.OFPP_LOCAL, WAN_PORT,priority=2,dl_type=0x0806,ip_src=connection.sock.getpeername()[0],nw_proto = 2)
+
 
         # send a few more bytes in to capture all WiFi Header.
         self.connection.send(of.ofp_set_config(miss_send_len=1024))        
