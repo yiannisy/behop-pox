@@ -460,6 +460,34 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             ap.is_blacklisted = self.is_blacklisted(dpid)                    
 
     def set_vbssid_map(self):
+        if BSSID_STRATEGY == BSSID_STRATEGY_ONE_PER_CLIENT:
+            self.set_vbssid_map_per_client()
+        elif BSSID_STRATEGY == BSSID_STRATEGY_ONE_PER_RADIO:
+            self.set_vbssid_map_per_radio()
+        else:
+            self.set_vbssid_map_per_client()
+
+    def set_vbssid_map_per_radio(self):
+        '''
+        Sets a static map for radio <-> vbssid.
+        '''
+        band_prefix = 0x060000000000 # 5GHz only for now
+        channel_prefix = 0x1000000000
+        dpid_prefix = 0x1
+        for channel in set(BEHOP_CHANNELS.values()):
+            dpids = [dpid for dpid in BEHOP_CHANNELS.keys() if BEHOP_CHANNELS[dpid] == channel]
+            for dpid in dpids:
+                nodes = sorted([node for node in self.node_to_dpid.keys() if self.node_to_dpid[node] == dpid])
+                log.debug("%d nodes for channel %d, dpid : %012x" % (len(nodes),channel,dpid))
+                log.debug("Assigning VBSSIDs for channel %d dpid %012x" % (channel,dpid))
+                for node in nodes:
+                    self.vbssid_map[node] = band_prefix | channel_prefix | dpid_prefix
+                dpid_prefix = dpid_prefix << 1
+            channel_prefix = channel_prefix << 1
+        for node,vbssid in self.vbssid_map.items():
+            log.debug("%012x:%012x" % (node,vbssid))
+
+    def set_vbssid_map_per_client(self):
         '''
         Sets a static map for station <-> vbssid.
         '''
