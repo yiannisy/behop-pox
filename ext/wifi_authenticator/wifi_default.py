@@ -31,17 +31,64 @@ all_stations = {}
 all_aps = {}
 phase_out = [True]
 
+class DefaultWiFiFSM(FSM):
+    def __init__(self):
+        self.states = ['SNIFF','IDLE','RESERVED','AUTH','ASSOC']
+        self.inputs = ['ProbeReq','AuthReq','AssocReq','Timeout','DeauthReq','DisassocReq']
+        FSM.__init__(self, 'SNIFF')
+        self.add_transition('SNIFF','AuthReq',self.sendAuthResponse,'AUTH')
+        self.add_transition('SNIFF','AssocReq',self.reinstallSendAssocResponse,'ASSOC')
+        self.add_transition('SNIFF','ReassocReq',self.reinstallSendReassocResponse,'ASSOC')
+        self.add_transition('SNIFF','DisassocReq',None,'SNIFF')
+        self.add_transition('SNIFF','DeauthReq',None,'SNIFF')
+        self.add_transition('AUTH','AuthReq',self.reinstallSendAuthResponse,'AUTH')
+        self.add_transition('AUTH','AssocReq',self.auth_to_assoc,'ASSOC')
+        self.add_transition('AUTH','ReassocReq',self.reinstallSendReassocResponse,'ASSOC')
+        self.add_transition('ASSOC','AuthReq',self.reinstallSendAuthResponse,'ASSOC')
+        self.add_transition('ASSOC','AssocReq',self.reinstallSendAssocResponse,'ASSOC')
+        self.add_transition('ASSOC','ReassocReq',self.reinstallSendReassocResponse,'ASSOC')        
+        self.add_transition('ASSOC','DisassocReq',self.delete_station, 'NONE')
+        self.add_transition('AUTH','DisassocReq',self.delete_station, 'NONE')
+        self.add_transition('ASSOC','DeauthReq',self.delete_station, 'NONE')        
+        self.add_transition('AUTH','DeauthReq',self.delete_station, 'NONE')        
+        self.add_transition('ASSOC','HostTimeout',self.delete_station, 'NONE')
+
+    def sniff_to_reserve(self, *args):
+        pass
+
+    def auth_to_assoc(self, *args):
+        pass
+
+    def sendProbeResponse(self, *args):
+        pass
+
+    def sendAuthResponse(self, *args):
+        pass
+
+    def sendAssocResponse(self, *args):
+        pass
+
+    def reinstallSendProbeResponse(self, *args):
+        pass
+
+    def reinstallSendAuthResponse(self, *args):
+        pass
+
+    def reinstallSendAssocResponse(self, *args):
+        pass
 
 
 class Station(object):
     def __init__(self, addr):
         self.addr = addr # mac address of station
-        self.dpid = None # dpid to which the station is assigned.
-        self.vbssid = None # assigned vbssid        
+        self.virtualap = None
         self.last_seen = time.time() # last heard from the AP.
         self.last_snr = 0 # SNR of last packet as reported form the dpid.
         self.state = 'SNIFF'
         log_fsm.debug("%012x : NONE -> %s" % (self.addr, self.state))
+
+    def setVirtualAP(self, virtualap):
+        self.virtualap = virtualap
 
     def __str__(self):
         return "%x|%s|%x|%x\n" % (self.addr,self.state,self.dpid,self.vbssid)
@@ -177,12 +224,6 @@ class RadioAP(EventMixin):
         else:
             return None
 
-    def getDefaultVirtualAP(self):
-        '''Returns the first VirtualAP. Useful on the default WiFi case.
-        '''
-        if len(self.virtual_aps) > 0:
-            return self.virtual_aps[0]
-
     def set_capabilities(self):
         '''
         Set the capabilities advertised by this RadioAP according to the channel.
@@ -224,6 +265,46 @@ class VirtualAP(EventMixin):
         
     def get_dpid(self):
         return self.parent_radioap.get_dpid()
+
+    def get_vbssid(self):
+        return self.vbssid
+
+    def getRadioAP(self):
+        return self.parent_radioap
+
+    def sendProbeResponse(self, src_addr):
+        log.debug("Sending Probe Response to %x" % src_addr)
+        ssid = SERVING_SSID
+        pkt_str = generate_probe_response(self.vbssid, ssid, src_addr, self.parent_radioap.current_channel, 
+                                          self.parent_radioap.capabilities, 
+                                          self.parent_radioap.ht_capabilities_info)
+        self.send_packet_out(pkt_str)
+
+    def sendAuthResponse(self, src_addr):
+        log.debug("Sending Auth Response to %x" % src_addr)
+        packet_str = generate_auth_response(self.vbssid, src_addr, self.parent_ap.current_channel)
+        self.send_packet_out(packet_str)
+
+    def sendAssocResponse(self, src_addr, params):
+        log.debug("Sending Assoc Response to %x" % src_addr)
+        sta = all_stations[src_addr]
+        packet_str = generate_assoc_response(self.vbssid, src_addr, params, self.parent_radioap.current_channel,
+                                             self.parent_radioap..capabilities, 
+                                             self.parent_radioap.ht_capabilities_info,sta.aid)
+        self.send_packet_out(packet_str)
+
+    def sendReassocResponse(self, src_addr, params):
+        log.debug("Sending ReAssoc Response to %x" % src_addr)
+        sta = all_stations[src_addr]
+        packet_str = generate_assoc_response(self.vbssid, src_addr, params, self.parent_radioap.current_channel,
+                                             self.parent_radioap..capabilities, 
+                                             self.parent_radioap.ht_capabilities_info,sta.aid, reassoc=True)
+        self.send_packet_out(packet_str)
+
+
+    def send_packet_out(self,msg_raw):
+        self.parent_radioap.send_packet_out(msg_raw)
+
 
 class PhyAP(EventMixin):
     _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, ReassocRequest, AddStation, RemoveStation, 
@@ -290,7 +371,7 @@ class PhyAP(EventMixin):
         self.connection.send(of.ofp_set_config(miss_send_len=1024))        
 
     def get_dpid(self):
-        return dpid
+        return self.dpid
 
     def is_whitelisted(self, addr):
         if addr in self.whitelisted_stas:
@@ -428,7 +509,7 @@ class PhyAP(EventMixin):
         self.connection.send(msg)
 
 
-class WifiAuthenticator(EventMixin, AssociationFSM):
+class WifiAuthenticator(EventMixin, DefaultWiFiFSM):
     '''
     This is the main class for WifiAuthentication. It keeps track of all APs
     on a AP-map and spawns a WifiAuthenticateSwitch for each AP.
@@ -445,7 +526,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         Setup vbssid map and placeholders for APs and stations.
         '''
         EventMixin.__init__(self)
-        AssociationFSM.__init__(self)
+        DefaultWiFiFSM.__init__(self)
         self.agg_msnger = AggBot(core.MessengerNexus.get_channel("MON_IB"), extra={'parent':self})
         core.openflow.addListeners(self)
         #core.openflow_discovery.addListenerByName("LinkEvent", self._handle_LinkEvent)
@@ -453,10 +534,6 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.all_stations = all_stations
         self.transparent = transparent
         self.bh_switch = None
-        self.vbssid_base = 0x020000000000
-        self.vbssid_backup = 0x060000000000
-        self.vbssid_pool = [self.vbssid_base | (1 << i) for i in range(VBSSID_RANGE_MIN,VBSSID_RANGE_MAX)]
-        self.vbssid_map = {}
         self.timer = None
         self.bw_timer = None
         self.set_timer()
@@ -468,7 +545,6 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             self.blacklisted_aps = self.load_blacklisted_aps()
         if USE_WHITELIST == 1:
             self.whitelisted_stas = self.load_whitelisted_stas()
-        self.set_vbssid_map()
         self.load_phy_aps()
         self.load_static_vaps()
 
@@ -497,7 +573,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             vap_5GHz = VirtualAP(vbssid = vbssid_5GHz, parent_radioap = phy_ap.radioap_5GHz)
             all_vaps[vbssid_2GHz] = vap_2GHz
             all_vaps[vbssid_5GHz] = vap_5GHz
-
+            ap_prefix = ap_prefix << 1
+            
     def load_topology(self):
         f = open(TOPOLOGY_FNAME,'r')
 
@@ -538,53 +615,6 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         for dpid,ap in all_aps.items():
             ap.whitelisted_stas = self.whitelisted_stas 
             ap.is_blacklisted = self.is_blacklisted(dpid)                    
-
-    def set_vbssid_map(self):
-        if BSSID_STRATEGY == BSSID_STRATEGY_ONE_PER_CLIENT:
-            self.set_vbssid_map_per_client()
-        elif BSSID_STRATEGY == BSSID_STRATEGY_ONE_PER_RADIO:
-            self.set_vbssid_map_per_radio()
-        else:
-            self.set_vbssid_map_per_client()
-
-    def set_vbssid_map_per_radio(self):
-        '''
-        Sets a static map for radio <-> vbssid.
-        '''
-        band_prefix = 0x060000000000 # 5GHz only for now
-        channel_prefix = 0x1000000000
-        dpid_prefix = 0x1
-        for channel in set(BEHOP_CHANNELS.values()):
-            dpids = [dpid for dpid in BEHOP_CHANNELS.keys() if BEHOP_CHANNELS[dpid] == channel]
-            for dpid in dpids:
-                nodes = sorted([node for node in self.node_to_dpid.keys() if self.node_to_dpid[node] == dpid])
-                log.debug("%d nodes for channel %d, dpid : %012x" % (len(nodes),channel,dpid))
-                log.debug("Assigning VBSSIDs for channel %d dpid %012x" % (channel,dpid))
-                for node in nodes:
-                    self.vbssid_map[node] = band_prefix | channel_prefix | dpid_prefix
-                dpid_prefix = dpid_prefix << 1
-            channel_prefix = channel_prefix << 1
-        for node,vbssid in self.vbssid_map.items():
-            log.debug("%012x:%012x" % (node,vbssid))
-
-    def set_vbssid_map_per_client(self):
-        '''
-        Sets a static map for station <-> vbssid.
-        '''
-        band_prefix = 0x060000000000 # 5GHz only for now
-        channel_prefix = 0x1000000000
-        for channel in set(BEHOP_CHANNELS.values()):
-            dpids = [dpid for dpid in BEHOP_CHANNELS.keys() if BEHOP_CHANNELS[dpid] == channel]
-            nodes = sorted([node for node in self.node_to_dpid.keys() if self.node_to_dpid[node] in dpids])
-            log.debug("%d nodes for channel %d" % (len(nodes),channel))
-            node_prefix = 0x1
-            log.debug("Assigning VBSSIDs for channel %d" % channel)
-            for node in nodes:
-                self.vbssid_map[node] = band_prefix | channel_prefix | node_prefix
-                node_prefix = node_prefix << 1
-            channel_prefix = channel_prefix << 1
-        for node,vbssid in self.vbssid_map.items():
-            log.debug("%012x:%012x" % (node,vbssid))
 
     def set_timer(self):
         '''
@@ -643,11 +673,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         '''
         Checks if a sniffed probe request is for us.
         '''
-        #if the station is already assigned to an AP, we respond only to probe requests from this AP.
-        sta = all_stations[event.src_addr]
-        if (sta.dpid != None and (sta.dpid != event.dpid)):
-            return False
-        return ((event.dpid == self.node_to_dpid[sta.addr]) and ((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None)))
+        # Just do an SSID-checking for the default WiFi case.
+        return ((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None))
 
     def is_valid_auth_request(self, event, sta):
         '''
@@ -673,13 +700,6 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         Checks if a sniffed deauth request is for us. We accept at the first AP it came from.
         '''
         return (event.bssid == sta.vbssid)
-
-    def is_valid_action_event(self, event, sta):
-        '''
-        Checks if the station is associated, the request comes from the assigned AP,
-        and is destined to the sta's vbssid.
-        '''
-        return ((event.dpid == sta.dpid) and (event.bssid == sta.vbssid) and (sta.state == 'ASSOC'))
 
     def is_valid_assoc_params(self, event, sta):
         '''
@@ -745,26 +765,6 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             self.next_aid += 1
         return cur_id
                         
-    def get_vbssid_for_host(self, src_addr):
-        '''
-        checks if this node has already a vbssid assigned.
-        if not, pick-up the first one from the pool and assign it to this host.
-        make sure to return the vbssid to the pool when the node leaves/disassociates.
-        As this needs to happen early (probe-request/response) we should free-up the
-        nodes that don't follow-up with auth/assoc request.
-        '''
-        if self.vbssid_map.has_key(src_addr):
-            vbssid = self.vbssid_map[src_addr]
-        else:
-            if(len(self.vbssid_pool) > 0):
-                vbssid = self.vbssid_pool[0]
-                self.vbssid_map[src_addr] = vbssid
-                del self.vbssid_pool[0]
-            else:
-                log.warn("Running out of VBSSID - giving backup vbssid for node %s" % src_addr)
-                vbssid = self.vbssid_backup
-        return vbssid
-
     def _handle_ConnectionUp(self, event):
         '''
         Setup a Wifi AP for each new connection.
@@ -822,17 +822,13 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         if event.src_addr not in all_stations.keys():
             all_stations[event.src_addr] = Station(event.src_addr)
         sta = all_stations[event.src_addr]
-
-        # check if this is a valid probe-req to process.
-        # this needs more sophistication : we could sniff on irrelevant probe-reqs
-        # or we might have to decide between multiple dpids...            
+        
+        # check if this is a valid probe-req to process (broadcast and SSID-check).
+        # In the default WiFi case there is a direct RadioAP <-> VirtualAP relationship.
+        # Send a ProbeResponse from that.
         if (self.is_valid_probe_request(event)):
-            sta.last_seen = time.time()
-            sta.snr = event.snr
-            new_state = self.processFSM(sta.state,'ProbeReq', event)
-            log_fsm.debug("%012x : %s -> %s (ProbeReq,vbssid:%012x dpid:%012x)" % 
-                          (sta.addr, sta.state, new_state, sta.vbssid, sta.dpid))
-            sta.state = new_state
+            vap = event.radioap.getDefaultVirtualAP()
+            self.sendProbeResponse(event.src_addr, vap)
 
     def _handle_AuthRequest(self, event):
         if event.src_addr in all_stations.keys():
@@ -1077,57 +1073,6 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         self.addStation(event.dpid, event.src_addr)
         self.sendAssocResponse(event)
                         
-    def sendProbeResponse(self, event):
-        log.debug("Sending Probe Response to %x" % event.src_addr)
-        vbssid = all_stations[event.src_addr].vbssid
-        wifi_ap = all_aps[event.dpid]
-        ssid = SERVING_SSID
-        pkt_str = generate_probe_response(vbssid, ssid, event.src_addr, wifi_ap.current_channel, 
-                                          wifi_ap.capabilities, wifi_ap.ht_capabilities_info)
-        all_aps[event.dpid].send_packet_out(pkt_str)
-
-    def sendAuthResponse(self, event):
-        log.debug("Sending Auth Response to %x" % event.src_addr)
-        vbssid = all_stations[event.src_addr].vbssid
-        wifi_ap = all_aps[event.dpid]
-        ssid = SERVING_SSID
-
-        packet_str = generate_auth_response(vbssid, event.src_addr, wifi_ap.current_channel)
-        all_aps[event.dpid].send_packet_out(packet_str)
-
-        # Some drivers also wait to hear a beacon before they move from authentication to association...
-        # this shouldn't happen here... 
-        packet_str = generate_beacon(vbssid, ssid, wifi_ap.current_channel,
-                                     wifi_ap.capabilities, wifi_ap.ht_capabilities_info)
-        all_aps[event.dpid].send_packet_out(packet_str)
-
-    def sendAssocResponse(self, event):
-        log.debug("Sending Assoc Response to %x" % event.src_addr)
-        sta = all_stations[event.src_addr]
-        wifi_ap = all_aps[event.dpid]
-        vbssid = sta.vbssid
-        packet_str = generate_assoc_response(vbssid, event.src_addr, event.params, wifi_ap.current_channel,
-                                             wifi_ap.capabilities, wifi_ap.ht_capabilities_info,sta.aid)
-        all_aps[event.dpid].send_packet_out(packet_str)
-
-    def sendReassocResponse(self, event):
-        log.debug("Sending ReAssoc Response to %x" % event.src_addr)
-        sta = all_stations[event.src_addr]
-        wifi_ap = all_aps[event.dpid]
-        vbssid = sta.vbssid
-        packet_str = generate_assoc_response(vbssid, event.src_addr, event.params, wifi_ap.current_channel,
-                                             wifi_ap.capabilities, wifi_ap.ht_capabilities_info,sta.aid, 
-                                             reassoc=True)
-        all_aps[event.dpid].send_packet_out(packet_str)
-
-        
-    def sendActionResponse(self, event):
-        log.debug("Sending Action Response to %x" % event.src_addr)
-        vbssid = all_stations[event.src_addr].vbssid
-        wifi_ap = all_aps[event.dpid]
-        packet_str = generate_action_response(vbssid, event.src_addr, wifi_ap.current_channel)
-        all_aps[event.dpid].send_packet_out(packet_str)
-
 def list_stations(state=None):
     if state == None:
         stas = [sta for sta in all_stations.values()]

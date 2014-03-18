@@ -593,42 +593,42 @@ class AssociationFSM(FSM):
 
 class ProbeRequest(Event):
     '''Event raised by an AP when a probe request is received.
-    @dpid : the AP reporting the request
+    @radioap : the RadioAP reporting the request
     @src_addr : host's address
     @snr: the snr of the packet
     '''
-    def __init__(self, dpid, src_addr, snr, ssid):
+    def __init__(self, radioap, src_addr, snr, ssid):
         Event.__init__(self)
-        self.dpid = dpid
+        self.radioap = radioap
         self.src_addr = src_addr
         self.snr = snr
         self.ssid = ssid
     
 class AuthRequest(Event):
     '''Event raised by an AP when a probe request is received.
-    @dpid : the AP reporting the request
+    @virtualap : the Virtual AP reporting the request
     @src_addr : host's address
     @bssid : the bssid for the authentication
     @snr: the snr of the packet
     '''
-    def __init__(self, dpid, src_addr, bssid, snr):
+    def __init__(self, virtualap, src_addr, bssid, snr):
         Event.__init__(self)
-        self.dpid = dpid
+        self.virtualap = virtualap
         self.src_addr = src_addr
         self.bssid = bssid
         self.snr = snr
 
 class AssocRequest(Event):
     '''Event raised by an AP when a probe request is received.
-    @dpid : the AP reporting the request
+    @virtualap : the VirtualAP reporting the request
     @src_addr : host's address
     @bssid : the bssid for the assocation
     @snr: the snr of the packet
     @params : the Wifi params
     '''
-    def __init__(self, dpid, src_addr, bssid, snr, params):
+    def __init__(self, virtualap, src_addr, bssid, snr, params):
         Event.__init__(self)
-        self.dpid = dpid
+        self.virtualap = virtualap
         self.src_addr = src_addr
         self.bssid = bssid
         self.snr = snr
@@ -642,9 +642,9 @@ class ReassocRequest(Event):
     @snr: the snr of the packet
     @params : the Wifi params
     '''
-    def __init__(self, dpid, src_addr, bssid, snr, params):
+    def __init__(self, virtualap, src_addr, bssid, snr, params):
         Event.__init__(self)
-        self.dpid = dpid
+        self.virtualap = virtualap
         self.src_addr = src_addr
         self.bssid = bssid
         self.snr = snr
@@ -657,9 +657,9 @@ class DisassocRequest(Event):
     @src_addr : host's address
     @bssid : the bssid from which the disassoc is reported.
     '''
-    def __init__(self, dpid, src_addr, bssid, reason):
+    def __init__(self, virtualap, src_addr, bssid, reason):
         Event.__init__(self)
-        self.dpid = dpid
+        self.virtualap = virtualap
         self.src_addr = src_addr
         self.bssid = bssid
         self.reason = reason
@@ -673,9 +673,9 @@ class DeauthRequest(Event):
     @src_addr : host's address
     @bssid : the bssid from which the disassoc is reported.
     '''
-    def __init__(self, dpid, src_addr, bssid, reason):
+    def __init__(self, virtualap, src_addr, bssid, reason):
         Event.__init__(self)
-        self.dpid = dpid
+        self.virtualap = virtualap
         self.src_addr = src_addr
         self.bssid = bssid
         self.reason = reason
