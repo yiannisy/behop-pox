@@ -14,6 +14,7 @@ all_stations = {}
 all_aps = {}
 all_vaps = {}
 personal_aps = {}
+phase_out = [True]
 
 class Station(object):
     def __init__(self, addr):
@@ -175,7 +176,7 @@ class WifiAuthenticator(EventMixin):
         '''
         for ap_dpid in BEHOP_TOPO.keys():
             all_aps[ap_dpid] = PhyAP(None, self.transparent, ap_dpid, self.is_blacklisted(ap_dpid), 
-                           self.whitelisted_stas, authenticator=self)
+                           self.whitelisted_stas, authenticator=self, phase_out = phase_out)
             all_aps[ap_dpid].addListeners(self)
 
     def load_static_vaps(self):
@@ -245,7 +246,7 @@ class WifiAuthenticator(EventMixin):
         Setup timer for stations timeout.
         '''
         if self.timer : self.timer.cancel()
-        self.timer = Timer(5, self.check_timeout_events, recurring=True)
+        #self.timer = Timer(5, self.check_timeout_events, recurring=True)
         if self.bw_timer : self.bw_timer.cancel()
         self.bw_timer = Timer(BW_LIST_UPDATE_INTERVAL, self.bw_update, recurring=True)
 
@@ -268,70 +269,6 @@ class WifiAuthenticator(EventMixin):
         del all_stations[sta.addr]
         if update_bssidmask:
             self.update_bssidmask(dpid)
-
-    def check_timeout_events(self):
-        '''
-        Periodically checks if stations are alive and if not remove associated state.
-        As we have to soft-reserve VBSSID during probe-responses, this has to run frequently
-        to ensure that we don't run out of VBSSID soon.
-        @TODO : Check the state of the station and vbssid before removing.
-        @TODO : Probably generate related deauth/disassoc messages from here (?)
-        '''
-        now = time.time()
-        _affected_aps = []
-        for sta in all_stations.values():
-            if now - sta.last_seen > ASSOC_TIMEOUT and sta.state != "ASSOC":
-                _affected_aps.append(sta.dpid)
-                log_fsm.debug("%012x : %s -> %s (ResTimeout)" % (sta.addr, sta.state, "NONE"))
-                self.delete_station(sta, update_bssidmask=False)
-
-        _affected_aps = set(_affected_aps)
-
-        # update the bssidmask of the affected APs
-        # group per AP to avoid multiple updates to the AP.
-        for ap in _affected_aps:
-            if ap:
-                self.update_bssidmask(ap)
-
-    def check_sta_switch(self, event, sta):
-        '''
-        Checks if we need to switch AP for this sta.
-        '''
-        # if sta is not assigned to an AP will grab it by default, no need to interfere here.
-        if (sta.dpid == None):
-            return
-        if (sta.dpid != event.dpid):
-            # if we are here we got a packet from an AP different from the one that the station
-            # is currently assigned. We ignore this unless one of the following happens:
-            # i) the packet comes with a much better SNR that the sta's AP.
-            # ii) it's been a long time since we last heard from the last AP.
-            if (event.snr - sta.last_snr > 15 and sta.last_snr < 20) or (time.time() - sta.last_seen > 5e6):
-                log_mob.info("Triggering Change for station %x" % sta.addr)
-                if (sta.state != 'SNIFF'):
-                    # state already installed in AP - need to move.
-                    self.move_station(sta.addr, sta.dpid, event.dpid)
-                sta.dpid = event.dpid
-
-    def check_sta_move(self, sta, sta_summary):
-        '''
-        Checks whether we should move a station from an AP to another.
-        Works only for stations who are already associated.
-        '''
-        cur_dpid_str = '%012x' % sta.dpid
-        cur_dpid = sta.dpid
-        # Monitor IB should know about this dpid, but sometimes is out-of-sync...
-        if cur_dpid_str not in sta_summary.keys():
-            return
-        cur_snr = sta_summary[cur_dpid_str][0]
-        max_dpid, max_snr = max([(int(dpid,16),sta_summary[dpid][0]) for dpid in sta_summary.keys()], key=lambda sta:sta[1])
-        
-        log_str = ' '.join(["%s->%d" % (dpid,sta_summary[dpid][0]) for dpid in sta_summary.keys()])
-        log_mob.debug("Station %012x : Cur_SNR : %d (%012x) | Max_SNR : %d (%012x) Details : %s" % (sta.addr, cur_snr, cur_dpid, max_snr, max_dpid, log_str))
-        if cur_snr > GOOD_SNR_THRESHOLD:
-            return
-        if max_snr - cur_snr > SNR_SWITCH_THRESHOLD:
-            log_mob.debug("Triggering Change for station %012x (%012x -> %012x)" % (sta.addr, cur_dpid, max_dpid))
-            self.move_station(sta.addr, cur_dpid, max_dpid)
 
     def get_next_aid(self):
         '''
