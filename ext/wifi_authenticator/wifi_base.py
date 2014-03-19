@@ -282,13 +282,13 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
         # Add downlink flow at the AP.
         phy_ap._set_simple_flow(WAN_PORT,[radioap.wlan_port],mac_dst = self.sta.addr, priority=2)
         # Add station state to the Radio AP.
-        radioap.add_station(self.sta.addr, self.virtualap.vbssid, self.sta.aid, 
+        radioap.add_station(self.sta.addr, self.virtualap.vbssid, self.sta.aid,
                              self.sta.params)
-        phy_ap.authenticator.set_station_flow(sta.addr, phy_ap.dpid)
+        phy_ap.authenticator.set_station_flow(self.sta.addr, phy_ap.dpid)
         if reassoc == False:
-            self.virtualap.send_assoc_response(sta.addr, sta.params, sta.aid)
+            self.virtualap.send_assoc_response(self.sta.addr, self.sta.params, self.sta.aid)
         else:
-            self.virtualap.send_reassoc_response(sta.addr, sta.params, sta.aid)
+            self.virtualap.send_reassoc_response(self.sta.addr, self.sta.params, self.sta.aid)
 
     def reinstall_send_assoc_response(self, event, reassoc=False):
         '''Check if we change Virtual AP. If we do:
@@ -319,7 +319,9 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
         Checks if a sniffed probe request is for us.
         '''
         # Just do an SSID-checking for the default WiFi case.
-        return ((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None))
+        # Also make sure it comes at the 5GHz band
+        return (((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None)) and 
+                (event.radioap.is_band_2GHz() == False))
     
     def is_valid_disassoc_request(self, event, sta):
         '''
