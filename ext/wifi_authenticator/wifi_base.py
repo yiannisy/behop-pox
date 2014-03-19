@@ -133,7 +133,7 @@ class PersonalAP(EventMixin, DefaultWiFiFSM):
         DefaultWiFiFSM.__init__(self)
         self.ssid = SERVING_SSID
         self.sta = station
-        self.virtual_ap = None
+        self.virtualap = None
         
     def handle_probe_request(self, event):
         '''
@@ -220,8 +220,8 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
             self.sta.last_seen = time.time()
             new_state = self.processFSM(self.sta.state, 'ReassocReq', event)
             log_fsm.debug("%012x : %s -> %s (ReassocReq, vbssid:%012x dpid:%012x)" % 
-                          (self.sta.addr, self.sta.state, new_state, event.virtual_ap.vbssid, 
-                           event.virtual_ap.parent_radioap.parent_phyap.dpid))
+                          (self.sta.addr, self.sta.state, new_state, event.virtualap.vbssid, 
+                           event.virtualap.parent_radioap.parent_phyap.dpid))
             self.sta.state = new_state
         else:
             log.warning("invalid reassoc request from %012x (%012x,%012x)" % 
@@ -251,8 +251,8 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
         self.uninstall()
 
     def uninstall(self):
-        if (self.virtual_ap):
-            radioap = self.virtual_ap.parent_radioap
+        if (self.virtualap):
+            radioap = self.virtualap.parent_radioap
             phy_ap = radioap.parent_phyap
             authenticator = phy_ap.authenticator
             # delete backhaul switch entry
@@ -275,14 +275,14 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
         - Add OpenFlow entry in backhaul switch.
         - Add OpenFlow entry in Access Point.
         - Add station state to the RadioAP.'''
-        self.virtual_ap = event.virtual_ap
-        radioap = self.virtual_ap.parent_radioap
+        self.virtualap = event.virtualap
+        radioap = self.virtualap.parent_radioap
         phy_ap = radioap.parent_phyap
         authenticator = phy_ap.authenticator
         # Add downlink flow at the AP.
         phy_ap._set_simple_flow(WAN_PORT,[radioap.wlan_port],mac_dst = self.sta.addr, priority=2)
         # Add station state to the Radio AP.
-        radioap.add_station(self.sta.addr, self.virtual_ap.vbssid, sta.aid, 
+        radioap.add_station(self.sta.addr, self.virtualap.vbssid, self.sta.aid, 
                              self.sta.params)
         phy_ap.authenticator.set_station_flow(sta.addr, phy_ap.dpid)
         if reassoc == False:
@@ -296,8 +296,8 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
         - Remove OpenFlow entry from Access Point.
         - Remove OpenFlow entry from Backhaul Switch.
         '''
-        if (self.virtual_ap) and (self.virtual_ap.vbssid != event.virtual_ap.vbssid):
-            radioap = self.virtual_ap.parent_radioap
+        if (self.virtualap) and (self.virtualap.vbssid != event.virtualap.vbssid):
+            radioap = self.virtualap.parent_radioap
             phy_ap = radioap.parent_phyap
             authenticator = phy_ap.authenticator
             # delete backhaul switch entry
@@ -337,7 +337,7 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
         '''
         Checks if the station asking to associate supports 40MHz, short GI and short slot.
         '''
-        radioap = event.virtual_ap.parent_radioap
+        radioap = event.virtualap.parent_radioap
         if ((event.params.capabilities & radioap.capa_mask == radioap.capa_exp) and 
             (event.params.ht_capabilities) and (event.params.ht_capabilities['ht_capab_info'] & radioap.ht_capa_mask == radioap.ht_capa_exp)):
             return True
@@ -404,7 +404,8 @@ class PhyAP(EventMixin):
                               DeauthRequest, DisassocRequest, ActionEvent,
                               AddVBeacon,DelVBeacon])
     
-    def __init__(self, connection, transparent, dpid = None, is_blacklisted = False, whitelisted_stas = None, authenticator = None):
+    def __init__(self, connection, transparent, dpid = None, is_blacklisted = False, whitelisted_stas = None, 
+                 authenticator = None, phase_out=None):
         log.debug("Setting up PhyAP %012x" % dpid)
         EventMixin.__init__(self)
         self.connection = connection
@@ -414,7 +415,7 @@ class PhyAP(EventMixin):
         self.whitelisted_stas = whitelisted_stas
         self.clients = []
         self.mon_ports = [WLAN_2_GHZ_MON_PORT, WLAN_5_GHZ_MON_PORT]
-
+        self.phase_out = phase_out
         
         if self.connection:
             self.listeners = connection.addListeners(self)
@@ -517,7 +518,7 @@ class PhyAP(EventMixin):
         if event.port in self.mon_ports:
             log_packet(event.parsed, event.dpid, event.port)
 
-        if ((self.is_blacklisted) or (event.port not in self.mon_ports) or (phase_out[0])):
+        if ((self.is_blacklisted) or (event.port not in self.mon_ports) or (self.phase_out[0])):
             return
         packet = event.parsed
         rdtap = dpkt.radiotap.Radiotap(packet.raw)
