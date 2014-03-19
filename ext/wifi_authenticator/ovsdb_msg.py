@@ -16,7 +16,7 @@ GET_DPID = {"method":"transact", "params":["Open_vSwitch", {"op":"select","table
                                                             "where":[],"columns":["datapath_id"]}], "id":1}
 ADD_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiSta","row":{"addr":None,"vbssid":None,"intf":None,"ht_capa":None,"sup_rates":["set",[]]}}],"id":1}
 DEL_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiSta","where":[]}],"id":2}
-UPDATE_BSSIDMASK = {"method":"transact", "params":["Wifi_vSwitch",{"op":"update","table":"WifiConfig","where":[],"row":{"bssidmask":None,"intf":None}}],"id":3}
+UPDATE_BSSIDMASK = {"method":"transact", "params":["Wifi_vSwitch",{"op":"update","table":"WifiConfig","where":[],"row":{"bssidmask":None}}],"id":3}
 ADD_VBEACON = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiBeacon","row":{"vbssid":None,"intf":None,}}],"id":4}
 DEL_VBEACON = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiBeacon","where":[]}],"id":5}
 
@@ -106,28 +106,28 @@ class OvsDBBot(ChannelBot, EventMixin):
                 log.debug(core.WifiAuthenticator.node_to_dpid)
                 nodes = [node for node in core.WifiAuthenticator.node_to_dpid.keys() if core.WifiAuthenticator.node_to_dpid[node] == dpid]
                 bssidmask = 0xffffffffffff
-                intf = core.WifiAuthenticator.all_aps[dpid].intf
+                phyap = core.WifiAuthenticator.all_aps[dpid]
                 log.debug("Deleting all existing beacons")
                 self.send_ovsdb_msg(dpid,DEL_VBEACON)
                 log.debug("Removing existing stations")
                 self.send_ovsdb_msg(dpid, DEL_STATION)
-                self._handle_UpdateBssidmask(UpdateBssidmask(dpid,intf,bssidmask))
-                for node in nodes:
-                    vbssid = core.WifiAuthenticator.vbssid_map[node]
-                    bssidmask &= ~(vbssid)
-                    log.debug("Adding VBeacon for node %012x (VBSSID:%012x|DPID:%012x)" % (node,vbssid,dpid))
-                    self._handle_AddVBeacon(AddVBeacon(dpid,intf,vbssid))
-                log.debug("BSSIDMASK for %012x (%s) : %08x" % (dpid,intf,bssidmask))
-                self._handle_UpdateBssidmask(UpdateBssidmask(dpid,intf,bssidmask))
-                # Go through the nodes and reinstall state if this node is associated.
-                # (used to cover the case where ovs in the AP restarts and state gets desynced.
-                for node in nodes:
-                    if core.WifiAuthenticator.all_stations.has_key(node) and core.WifiAuthenticator.all_stations[node].state == 'ASSOC':
-                        log.debug("Reinstalling state for associated station %012x" % (node))
-                        station = core.WifiAuthenticator.all_stations[node]
-                        ap = core.WifiAuthenticator.all_aps[dpid]
-                        self._handle_AddStation(AddStation(dpid,intf,node,station.vbssid,station.aid,
-                                                station.params,ap.ht_capabilities_info))
+                for radioap in [phyap.radioap_2GHz, phyap.radioap_5GHz]:                    
+                    log.debug("VAPs for %s (%012x) : %s" % (radioap.intf,phyap.dpid,radioap.virtual_aps.keys()))
+                    for vbssid in radioap.virtual_aps.keys():
+                        bssidmask &= ~(vbssid)
+                        log.debug("Adding VBeacon for VirtualAP %012x (DPID:%012x)" % (vbssid,dpid))
+                        self._handle_AddVBeacon(AddVBeacon(dpid,radioap.intf,vbssid))
+                    log.debug("BSSIDMASK for %012x (%s) : %08x" % (dpid,radioap.intf,bssidmask))
+                    self._handle_UpdateBssidmask(UpdateBssidmask(dpid,radioap.intf,bssidmask))
+                    # Go through the nodes and reinstall state if this node is associated.
+                    # (used to cover the case where ovs in the AP restarts and state gets desynced.
+                    # for node in nodes:
+                    #    if core.WifiAuthenticator.all_stations.has_key(node) and core.WifiAuthenticator.all_stations[node].state == 'ASSOC':
+                    #        log.debug("Reinstalling state for associated station %012x" % (node))
+                    #        station = core.WifiAuthenticator.all_stations[node]
+                    #        ap = core.WifiAuthenticator.all_aps[dpid]
+                    #        self._handle_AddStation(AddStation(dpid,intf,node,station.vbssid,station.aid,
+                    #                                           station.params,ap.ht_capabilities_info))
             except (KeyError, TypeError) as e:
                 pass
 
@@ -224,7 +224,8 @@ class OvsDBBot(ChannelBot, EventMixin):
         upd_json = UPDATE_BSSIDMASK.copy()
         _bssidmask = "%012x" % event.bssidmask
         upd_json["params"][1]["row"]["bssidmask"] = _bssidmask
-        upd_json["params"][1]["row"]["intf"] = event.intf
+        #upd_json["params"][1]["row"]["intf"] = event.intf
+        upd_json["params"][1]["where"] == [["intf","==",event.intf]]
         log.debug("Updating BSSIDMASK for AP %x : %x" % (event.dpid, event.bssidmask))
         if self.connections.has_key(event.dpid):
             self.send_ovsdb_msg(event.dpid,upd_json)
