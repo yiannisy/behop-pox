@@ -382,9 +382,16 @@ def list_stations(state=None):
         print "%d. %012x:%s" % (idx, sta.addr,sta.state)
         idx += 1
 
+def list_personal_aps():
+    idx = 1
+    for ap in personal_aps.values():
+        print "%d %012x" % (idx, ap.sta.addr)
+        idx += 1
+
 def launch( transparent=False):
     core.Interactive.variables['behop_stations'] = all_stations
     core.Interactive.variables['behop_aps'] = all_aps
     core.Interactive.variables['behop_phase_out'] = phase_out
     core.Interactive.variables['list_stations'] = list_stations
+    core.Interactive.variables['list_personal_aps'] = list_personal_aps
     core.registerNew(WifiAuthenticator, str_to_bool(transparent))
