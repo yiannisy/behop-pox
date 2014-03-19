@@ -121,6 +121,8 @@ class BackhaulSwitch(EventMixin):
         self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
         self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], priority=1)
 
+
+
     def _set_simple_flow(self,port_in, ports_out, priority=1,mac_src=None,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None, dl_type=0x0800,idle_timeout=0):
         msg = of.ofp_flow_mod()
         msg.idle_timeout=idle_timeout
@@ -150,95 +152,23 @@ class BackhaulSwitch(EventMixin):
             msg.match.priority = priority
         self.connection.send(msg)
 
-class RadioAP(EventMixin):
-    '''This is the AP instance running on a physical interface.
-    '''
-    def __init__(self, channel = None, intf = None, parent_phyap = None, virtual_aps = []):
-        self.current_channel = channel
-        self.intf = intf
-        self.parent_phyap = phyap
-        self.virtual_aps = virtual_aps
-        self.set_capabilities()
-
-    def is_band_2GHZ(self):
-        if self.current_channel <= WLAN_2_GHZ_CHANNEL_MAX:
-            return True
-        return False
-
-    def get_dpid(self):
-        return self.parent_phyap.get_dpid()
-
-    def getPhyAP(self):
-        return self.parent_phyap
-
-    def getVirtualAP(self, vbssid):
-        if vbssid in self.virtual_aps.keys():
-            return self.virtual_aps[vbssid]
-        else:
-            return None
-
-    def getDefaultVirtualAP(self):
-        '''Returns the first VirtualAP. Useful on the default WiFi case.
-        '''
-        if len(self.virtual_aps) > 0:
-            return self.virtual_aps[0]
-
-    def set_capabilities(self):
-        '''
-        Set the capabilities advertised by this RadioAP according to the channel.
-        '''
-        if self.is_band_2GHZ():
-            self.capabilities = WLAN_2_GHZ_CAPA
-            self.ht_capabilities_info = WLAN_2_GHZ_HT_CAPA
-            self.capa_exp = WLAN_2_GHZ_CAPA_EXP
-            self.capa_mask = WLAN_2_GHZ_CAPA_MASK
-            self.ht_capa_exp = WLAN_2_GHZ_HT_CAPA_EXP
-            self.ht_capa_mask = WLAN_2_GHZ_HT_CAPA_MASK
-            self.intf = WLAN_2_GHZ_INTF
-            self.mon_port = WLAN_2_GHZ_MON_PORT
-            self.wlan_port = WLAN_2_GHZ_WLAN_PORT
-        else:
-            self.capabilities = WLAN_5_GHZ_CAPA
-            self.ht_capabilities_info = WLAN_5_GHZ_HT_CAPA
-            self.capa_exp = WLAN_5_GHZ_CAPA_EXP
-            self.capa_mask = WLAN_5_GHZ_CAPA_MASK
-            self.ht_capa_exp = WLAN_5_GHZ_HT_CAPA_EXP
-            self.ht_capa_mask = WLAN_5_GHZ_HT_CAPA_MASK
-            self.intf = WLAN_5_GHZ_INTF
-            self.mon_port = WLAN_5_GHZ_MON_PORT
-            self.wlan_port = WLAN_5_GHZ_WLAN_PORT
-
-    def send_packet_out(self, msg_raw):
-        self.parent_phyap.send_packet_out(msg_raw, self.mon_port)
-
-
-class PersonalAP(EventMixin):
-    def __init__(self):
-        pass
-
-class VirtualAP(EventMixin):
-    def __init__(self, vbssid = None, parent_radioap = None, personal_aps = []):
-        self.vbssid = vbssid
-        self.parent_radioap = parent_radioap
-        self.personal_aps = personal_aps
-        
-    def get_dpid(self):
-        return self.parent_radioap.get_dpid()
-
-class PhyAP(EventMixin):
+class WifiAuthenticateSwitch(EventMixin):
     _eventMixin_events = set([ProbeRequest, AuthRequest, AssocRequest, ReassocRequest, AddStation, RemoveStation, 
                               DeauthRequest, DisassocRequest, ActionEvent,
                               AddVBeacon,DelVBeacon])
     
-    def __init__(self, connection, transparent, dpid = None, is_blacklisted = False, whitelisted_stas = None):
+    def __init__(self, connection, transparent, is_blacklisted = False, whitelisted_stas = None, channel = 11):
         EventMixin.__init__(self)
         self.connection = connection
         self.transparent = transparent
-        self.dpid = dpid
         self.is_blacklisted = is_blacklisted
         self.whitelisted_stas = whitelisted_stas
+        self.current_channel = channel
         self.clients = []
         self.mon_ports = [WLAN_2_GHZ_MON_PORT, WLAN_5_GHZ_MON_PORT]
+        self.set_capabilities()
+
+        self.preinstall_stas()
 
         self.listeners = connection.addListeners(self)
         # Setup default behavior
@@ -257,14 +187,6 @@ class PhyAP(EventMixin):
 
         # send a few more bytes in to capture all WiFi Header.
         self.connection.send(of.ofp_set_config(miss_send_len=1024))        
-
-        self.radioap_2GHz =  RadioAP(channel = BEHOP_CHANNELS_2GHz[self.dpid],
-                                     intf = "wlan0",
-                                     parent_phyap = self)
-        self.radioap_5GHz =  RadioAP(channel = BEHOP_CHANNELS_5GHz[self.dpid],
-                                     intf = "wlan1",
-                                     parent_phyap = self)
-
 
     def update_connection(self, connection):
         '''
@@ -289,13 +211,46 @@ class PhyAP(EventMixin):
         # send a few more bytes in to capture all WiFi Header.
         self.connection.send(of.ofp_set_config(miss_send_len=1024))        
 
-    def get_dpid(self):
-        return dpid
-
     def is_whitelisted(self, addr):
         if addr in self.whitelisted_stas:
             return True
-        return False                              
+        return False
+
+    def is_band_2GHZ(self):
+        if self.current_channel <= WLAN_2_GHZ_CHANNEL_MAX:
+            return True
+        return False
+
+    def preinstall_stas(self):
+        '''
+        Set basic properties of the AP at connection time.
+        '''
+        # Set the bssidmask
+                              
+    def set_capabilities(self):
+        '''
+        Set the capabilities advertised by the AP according to the channel.
+        '''
+        if self.is_band_2GHZ():
+            self.capabilities = WLAN_2_GHZ_CAPA
+            self.ht_capabilities_info = WLAN_2_GHZ_HT_CAPA
+            self.capa_exp = WLAN_2_GHZ_CAPA_EXP
+            self.capa_mask = WLAN_2_GHZ_CAPA_MASK
+            self.ht_capa_exp = WLAN_2_GHZ_HT_CAPA_EXP
+            self.ht_capa_mask = WLAN_2_GHZ_HT_CAPA_MASK
+            self.intf = WLAN_2_GHZ_INTF
+            self.mon_port = WLAN_2_GHZ_MON_PORT
+            self.wlan_port = WLAN_2_GHZ_WLAN_PORT
+        else:
+            self.capabilities = WLAN_5_GHZ_CAPA
+            self.ht_capabilities_info = WLAN_5_GHZ_HT_CAPA
+            self.capa_exp = WLAN_5_GHZ_CAPA_EXP
+            self.capa_mask = WLAN_5_GHZ_CAPA_MASK
+            self.ht_capa_exp = WLAN_5_GHZ_HT_CAPA_EXP
+            self.ht_capa_mask = WLAN_5_GHZ_HT_CAPA_MASK
+            self.intf = WLAN_5_GHZ_INTF
+            self.mon_port = WLAN_5_GHZ_MON_PORT
+            self.wlan_port = WLAN_5_GHZ_WLAN_PORT
 
     def _set_simple_flow(self,port_in,port_out, priority=1,ip_src=None, ip_dst=None,queue_id=None,dl_type=0x0800,nw_proto=None):
         msg = of.ofp_flow_mod()
@@ -318,7 +273,7 @@ class PhyAP(EventMixin):
         if event.port in self.mon_ports:
             log_packet(event.parsed, event.dpid, event.port)
 
-        if ((self.is_blacklisted) or (event.port not in self.mon_ports) or (phase_out[0])):
+        if ((self.is_blacklisted) or (event.port != self.mon_port) or (phase_out[0])):
             return
         packet = event.parsed
         rdtap = dpkt.radiotap.Radiotap(packet.raw)
@@ -353,45 +308,35 @@ class PhyAP(EventMixin):
             if  (not self.is_whitelisted(src_addr)):
                 self.log_blacklisted_sta_packet(ie, event)
                 return
-
-
-        # get the radio that we took the reply from
-        # Probe Requests are destined to the radio interface.
-        # The rest (auth,(re)assoc,disassoc,deauth are destined to a VAP.
-        # for the rest we just don't care.
-        radioap = self.radioap_2GHz if event.port == WLAN_2GHZ_MON_PORT else self.radioap_5GHz
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_PROBE_REQ):
-            self.raiseEvent(ProbeRequest(radioap, int(binascii.hexlify(ie.mgmt.src),16), snr, ie.ssid.data))
-            
-        if (ie.type == dpkt.ieee80211.MGMT_TYPE and (ie.subtype == dpkt.ieee80211.M_AUTH or
-                                                     ie.subtype == dpkt.ieee80211.M_ASSOC_REQ or
-                                                     ie.subtype == dpkt.ieee80211.M_REASSOC_REQ or
-                                                     ie.subtype == dpkt.ieee80211.M_DISASSOC_REQ or
-                                                     ie.subtype == dpkt.ieee80211.M_DEAUTHREQ)):
-            src = int(binascii.hexlify(ie.mgmt.src),16)
-            vbssid = int(binascii.hexlify(ie.mgmt.bssid),16)
-            vap = radioap.getVirtualAP(vbssid)
-            if vap == None:
-                return
+            self.raiseEvent(ProbeRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), snr, ie.ssid.data))
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_AUTH):
-            # Auth requests are destined to a virtual-ap interface.
-            self.raiseEvent(AuthRequest(vap, src, vbssid,16), snr))
+            self.raiseEvent(AuthRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr))
+            #self.send_packet_out(AUTH_REPLY_STR)
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_ASSOC_REQ):
             params = WifiStaParams(packet.raw[rd_len:])
-            self.raiseEvent(AssocRequest(vap, src, vbssid, snr, params))
+            self.raiseEvent(AssocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_REASSOC_REQ):
             params = WifiStaParams(packet.raw[rd_len:], reassoc=True)
-            self.raiseEvent(ReassocRequest(vap,src ,vbssid, snr, params))
+            self.raiseEvent(ReassocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src),16), int(binascii.hexlify(ie.mgmt.bssid),16), snr, params))
+
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DISASSOC):
-            self.raiseEvent(DisassocRequest(vap,src,vbssid,ie.diassoc.reason))
+            self.raiseEvent(DisassocRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src), 16), 
+                                            int(binascii.hexlify(ie.mgmt.bssid), 16),ie.diassoc.reason))
             log.debug("Disassoc with status code %x" % ie.diassoc.reason)
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DEAUTH):
-            self.raiseEvent(DeauthRequest(vap, src, vbssid,ie.deauth.reason))
+            self.raiseEvent(DeauthRequest(event.dpid, int(binascii.hexlify(ie.mgmt.src), 16), 
+                                            int(binascii.hexlify(ie.mgmt.bssid), 16),ie.deauth.reason))
+
+                            
+
+        #if (ie.type == 0 and ie.subtype != 8):
+        #    print "Received %x from %s" % (ie.subtype, binascii.hexlify(ie.mgmt.src))
 
     def log_blacklisted_sta_packet(self, ie, event):
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_AUTH):
@@ -421,9 +366,9 @@ class PhyAP(EventMixin):
                            int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))        
             log.debug("Deauth with status code %x" % ie.deauth.reason)
        
-    def send_packet_out(self, msg_raw, port):
+    def send_packet_out(self, msg_raw):
         msg = of.ofp_packet_out(in_port=of.OFPP_NONE)
-        msg.actions.append(of.ofp_action_output(port = port))
+        msg.actions.append(of.ofp_action_output(port = self.mon_port))
         msg.data = msg_raw
         self.connection.send(msg)
 
@@ -469,34 +414,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
         if USE_WHITELIST == 1:
             self.whitelisted_stas = self.load_whitelisted_stas()
         self.set_vbssid_map()
-        self.load_phy_aps()
-        self.load_static_vaps()
 
-    def load_phy_aps(self):
-        '''Statically create a placeholder object for all known Access Points.
-        '''
-        for ap_dpid in BEHOP_TOPO.keys():
-            phy_ap = PhyAP(None, self.transparent, self.is_blacklisted(ap_dpid), self.whitelisted_stas)
-            phy_ap.addListeners(self)
-            all_aps[ap_dpid] = phy_ap            
 
-    def load_static_vaps(self):
-        '''
-        Static VAP allocation---one per RadioAP.
-        We don't care about bssidmask bitmap collission when 
-        we have a one-to-one VAP allocation, so don't bother to
-        do channel reuse.
-        '''
-        band_prefix_2GHz = 0x020000000000
-        band_prefix_5GHz = 0x060000000000
-        ap_prefix = 0x1
-        for phy_ap in sorted(all_aps.values()):
-            vbssid_2GHz = band_prefix_2GHz | ap_prefix
-            vbssid_5GHz = band_prefix_5GHz | ap_prefix
-            vap_2GHz = VirtualAP(vbssid = vbssid_2GHz, parent_radioap = phy_ap.radioap_2GHz)
-            vap_5GHz = VirtualAP(vbssid = vbssid_5GHz, parent_radioap = phy_ap.radioap_5GHz)
-            all_vaps[vbssid_2GHz] = vap_2GHz
-            all_vaps[vbssid_5GHz] = vap_5GHz
 
     def load_topology(self):
         f = open(TOPOLOGY_FNAME,'r')
@@ -526,6 +445,7 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             log.info("Whitelisted STA : %012x" % sta)
         return w_stas.keys()
     
+
     def is_blacklisted(self, dpid):
         if dpid in self.blacklisted_aps:
             return True
@@ -780,6 +700,15 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
                 log.warn("Updating connection for AP %x" % event.dpid)
                 all_aps[event.dpid].update_connection(event.connection)
                 return
+            try:
+                channel = BEHOP_CHANNELS[event.dpid]
+            except:
+                # no predefined channel for this AP---pick-up the default one.
+                log.debug("no predefined channel for this AP---pick-up the default one.")
+                channel = DEFAULT_BEHOP_CHANNEL
+            wifi_ap = WifiAuthenticateSwitch(event.connection, self.transparent, self.is_blacklisted(event.dpid), self.whitelisted_stas, channel = channel)
+            wifi_ap.addListeners(self)
+            all_aps[event.dpid] = wifi_ap
 
     def _handle_ConnectionDown(self, event):
         '''
@@ -792,6 +721,16 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             if not all_aps.has_key(event.dpid) or event.connection != all_aps[event.dpid].connection:
                 log.debug("Will not remove AP state---AP unkown or connection already updated...")
                 return
+            #log.debug("Removing AP state and associated stations...")
+            #for sta in all_stations.values():
+            #    if sta.dpid == event.dpid:
+            #        self.delete_station(sta)
+            #del all_aps[event.dpid]
+
+    def _handle_LinkEvent(self, event):
+        if event.added == True:
+            log.debug("Link added : %x:%d -> %x:%d" % (event.link.dpid1, event.link.port1,
+                                                       event.link.dpid2, event.link.port2))
         
     def _handle_ProbeRequest(self, event):
         '''
@@ -823,6 +762,8 @@ class WifiAuthenticator(EventMixin, AssociationFSM):
             all_stations[event.src_addr] = Station(event.src_addr)
         sta = all_stations[event.src_addr]
 
+        #self.check_sta_switch(event, sta)
+            
         # check if this is a valid probe-req to process.
         # this needs more sophistication : we could sniff on irrelevant probe-reqs
         # or we might have to decide between multiple dpids...            
