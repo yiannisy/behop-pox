@@ -1,14 +1,33 @@
+from pox.core import core
+import pox.openflow.libopenflow_01 as of
+from pox.lib.util import dpid_to_str as mac_to_str
+from pox.lib.util import str_to_bool
+import time
+from pox.lib.recoco import Timer
+from ovsdb_msg import SnrSummary,AggService, AggBot, OvsDBBot
+from pox.forwarding.l2_learning import LearningSwitch
+
+import dpkt, binascii
+from pox.lib.revent import *
 from wifi_helper import *
+
+from dpkt import NeedData
+from pox.lib.addresses import EthAddr
+from behop_config import *
+from wifi_params import *
+from behop_config import *
+
 
 
 class RadioAP(object):
     '''This is an AP instance running on a physical interface.
     '''
-    def __init__(self, channel = None, intf = None, parent_phyap = None, virtual_aps = []):
+    def __init__(self, channel = None, intf = None, parent_phyap = None):
         self.current_channel = channel
         self.intf = intf
         self.parent_phyap = parent_phyap
-        self.virtual_aps = virtual_aps
+        self.virtual_aps = {}
+
         self.set_capabilities()
 
     def is_band_2GHZ(self):
@@ -81,13 +100,13 @@ class DefaultWiFiFSM(FSM):
         self.add_transition('AUTH','ReassocReq',self.install_send_reassoc_response,'ASSOC')
         self.add_transition('ASSOC','ProbeReq',self.send_probe_response,'ASSOC')
         self.add_transition('ASSOC','AuthReq',self.send_auth_response,'ASSOC')
-        self.add_transition('ASSOC','AssocReq',self.reinstall_send_assocresponse,'ASSOC')
+        self.add_transition('ASSOC','AssocReq',self.reinstall_send_assoc_response,'ASSOC')
         self.add_transition('ASSOC','ReassocReq',self.reinstall_send_reassoc_response,'ASSOC')        
-        self.add_transition('ASSOC','DisassocReq',self.delete_station, 'NONE')
-        self.add_transition('AUTH','DisassocReq',self.delete_station, 'NONE')
-        self.add_transition('ASSOC','DeauthReq',self.delete_station, 'NONE')        
-        self.add_transition('AUTH','DeauthReq',self.delete_station, 'NONE')        
-        self.add_transition('ASSOC','HostTimeout',self.delete_station, 'NONE')
+        self.add_transition('ASSOC','DisassocReq',self.uninstall, 'NONE')
+        self.add_transition('AUTH','DisassocReq',self.uninstall, 'NONE')
+        self.add_transition('ASSOC','DeauthReq',self.uninstall, 'NONE')        
+        self.add_transition('AUTH','DeauthReq',self.uninstall, 'NONE')        
+        self.add_transition('ASSOC','HostTimeout',self.uninstall, 'NONE')
 
     def send_probe_response(self, *args):        
         pass
@@ -113,7 +132,7 @@ class PersonalAP(EventMixin, DefaultWiFiFSM):
     def __init__(self, station):
         DefaultWiFiFSM.__init__(self)
         self.ssid = SERVING_SSID
-        self.station = station
+        self.sta = station
         self.virtual_ap = None
         
     def handle_probe_request(self, event):
@@ -173,7 +192,7 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
             self.sta.last_seen = time.time()
             new_state = self.processFSM(self.sta.state, 'ProbeReq', event)
             log_fsm.debug("%012x : %s -> %s (ProbeReq, vbssid:%012x dpid:%012x)" % 
-                          (self.sta.addr, self.sta.state, new_state, event.radioap.virtual_aps[0].vbssid, 
+                          (self.sta.addr, self.sta.state, new_state, event.radioap.virtual_aps.values()[0].vbssid, 
                            event.radioap.parent_phyap.dpid))
 
     def handle_auth_request(self, event):
@@ -239,15 +258,16 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
             # delete backhaul switch entry
             authenticator.del_station_flow(self.sta.addr, phy_ap.dpid)
             # delete radio AP state
-            radioap.del_station(self.sta.src_addr)
+            radioap.del_station(self.sta.addr)
             # delete OpenFlow AP entry
-            phy_ap._del_simple_flow(WAN_PORT, mac_dst = self.sta.src_addr)
+            phy_ap._del_simple_flow(WAN_PORT, mac_dst = self.sta.addr)
 
     def send_probe_response(self, event):
-        event.virtualap.sendProbeResponse(self.sta.src_addr, self.ssid)
+        # we have a single VAP installed on this interface, just send it there.
+        event.radioap.virtual_aps.values()[0].send_probe_response(self.sta.addr, self.ssid)
 
     def send_auth_response(self, event):
-        event.virtualap.sendAuthResponse(self.sta.src_addr)
+        event.virtualap.sendAuthResponse(self.sta.addr)
 
     def install_send_assoc_response(self, event, reassoc=False):
         '''Install this personal AP in the infrastructure.
@@ -260,9 +280,9 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
         phy_ap = radioap.parent_phyap
         authenticator = phy_ap.authenticator
         # Add downlink flow at the AP.
-        phy_ap._set_simple_flow(WAN_PORT,[radioap.wlan_port],mac_dst = self.sta.src_addr, priority=2)
+        phy_ap._set_simple_flow(WAN_PORT,[radioap.wlan_port],mac_dst = self.sta.addr, priority=2)
         # Add station state to the Radio AP.
-        radioap.add_station(self.sta.src_addr, self.virtual_ap.vbssid, sta.aid, 
+        radioap.add_station(self.sta.addr, self.virtual_ap.vbssid, sta.aid, 
                              self.sta.params)
         phy_ap.authenticator.set_station_flow(sta.addr, phy_ap.dpid)
         if reassoc == False:
@@ -283,9 +303,9 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
             # delete backhaul switch entry
             authenticator.del_station_flow(self.sta.addr, phy_ap.dpid)
             # delete radio AP state
-            radioap.del_station(self.sta.src_addr)
+            radioap.del_station(self.sta.addr)
             # delete OpenFlow AP entry
-            phy_ap._del_simple_flow(WAN_PORT, mac_dst = self.sta.src_addr)
+            phy_ap._del_simple_flow(WAN_PORT, mac_dst = self.sta.addr)
         self.install_send_assoc_response(event, reassoc=reassoc)
 
     def install_send_reassoc_response(self, event):
@@ -336,10 +356,10 @@ class VirtualAP(object):
     It's characterized by a VBSSID and it's placed on a RadioAP,
     from where it inherits its physical properties.
     '''
-    def __init__(self, vbssid = None, parent_radioap = None, personal_aps = []):
+    def __init__(self, vbssid = None, parent_radioap = None):
         self.vbssid = vbssid
         self.parent_radioap = parent_radioap
-        self.personal_aps = personal_aps
+        self.personal_aps = []
         
     def get_dpid(self):
         if self.parent_radioap:
@@ -406,9 +426,9 @@ class PhyAP(EventMixin):
             # This assumes that the connection is direct and there is no NAT/FlowVisor in between, as 
             # we detect the AP's address through the OF connection.
             # Monitor port goes directly to the controller...        
-            self._set_simple_flow(self.radio_2GHz.wlan_port ,WAN_PORT)
-            self._set_simple_flow(self.radio_5GHz.wlan_port ,WAN_PORT)
-            self._set_simple_flow(WAN_PORT, [self.radio_2GHz.wlan_port, self.radio5GHz.wlan_port], 
+            self._set_simple_flow(self.radioap_2GHz.wlan_port ,WAN_PORT)
+            self._set_simple_flow(self.radioap_5GHz.wlan_port ,WAN_PORT)
+            self._set_simple_flow(WAN_PORT, [self.radioap_2GHz.wlan_port, self.radio5GHz.wlan_port], 
                                   mac_dst=EthAddr("ffffffffffff"), priority=2)
             self._set_simple_flow(WAN_PORT,of.OFPP_NORMAL,priority=3,ip_dst=connection.sock.getpeername()[0])
             self._set_simple_flow(of.OFPP_LOCAL,WAN_PORT, priority=3,ip_src=connection.sock.getpeername()[0])
@@ -438,15 +458,15 @@ class PhyAP(EventMixin):
         self.connection = connection
         self.listeners = self.connection.addListeners(self)
         # we also need to re-add flows as the switch will start from a clean-state.
-        self._set_simple_flow(self.radio_2GHz.wlan_port ,WAN_PORT)
-        self._set_simple_flow(self.radio_5GHz.wlan_port ,WAN_PORT)
-        self._set_simple_flow(WAN_PORT, [self.radio_2GHz.wlan_port, self.radio5GHz.wlan_port], 
+        self._set_simple_flow(self.radioap_2GHz.wlan_port ,[WAN_PORT])
+        self._set_simple_flow(self.radioap_5GHz.wlan_port ,[WAN_PORT])
+        self._set_simple_flow(WAN_PORT, [self.radioap_2GHz.wlan_port, self.radioap_5GHz.wlan_port], 
                               mac_dst=EthAddr("ffffffffffff"), priority=2)
-        self._set_simple_flow(WAN_PORT,of.OFPP_NORMAL,priority=3,ip_dst=connection.sock.getpeername()[0])
-        self._set_simple_flow(of.OFPP_LOCAL,WAN_PORT, priority=3,ip_src=connection.sock.getpeername()[0])
+        self._set_simple_flow(WAN_PORT,[of.OFPP_NORMAL],priority=3,ip_dst=connection.sock.getpeername()[0])
+        self._set_simple_flow(of.OFPP_LOCAL,[WAN_PORT], priority=3,ip_src=connection.sock.getpeername()[0])
         # Allow arp packets with the AP's local IP address as destination.
-        self._set_simple_flow(WAN_PORT, of.OFPP_NORMAL,priority=3,dl_type=0x0806,ip_dst=connection.sock.getpeername()[0],nw_proto = 1)
-        self._set_simple_flow(of.OFPP_LOCAL, WAN_PORT,priority=3,dl_type=0x0806,ip_src=connection.sock.getpeername()[0],nw_proto = 2)
+        self._set_simple_flow(WAN_PORT, [of.OFPP_NORMAL],priority=3,dl_type=0x0806,ip_dst=connection.sock.getpeername()[0],nw_proto = 1)
+        self._set_simple_flow(of.OFPP_LOCAL, [WAN_PORT],priority=3,dl_type=0x0806,ip_src=connection.sock.getpeername()[0],nw_proto = 2)
 
         # send a few more bytes in to capture all WiFi Header.
         self.connection.send(of.ofp_set_config(miss_send_len=1024))        
@@ -459,7 +479,8 @@ class PhyAP(EventMixin):
             return True
         return False                              
 
-    def _set_simple_flow(self,port_in, ports_out, priority=1,mac_src=None,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None, dl_type=0x0800,idle_timeout=0):
+    def _set_simple_flow(self,port_in, ports_out, priority=1,mac_src=None,mac_dst=None, 
+                         ip_src=None, ip_dst=None,queue_id=None, dl_type=0x0800,nw_proto=None, idle_timeout=0):
         msg = of.ofp_flow_mod()
         msg.idle_timeout=idle_timeout
         msg.flags = of.OFPFF_SEND_FLOW_REM
@@ -475,6 +496,8 @@ class PhyAP(EventMixin):
                 msg.match.nw_dst = ip_dst
             if (ip_src):
                 msg.match_nw_src = ip_src
+        if nw_proto:
+            msg.match.nw_proto = nw_proto
         for port_out in ports_out:
             msg.actions.append(of.ofp_action_output(port = port_out))
         self.connection.send(msg)
@@ -535,15 +558,15 @@ class PhyAP(EventMixin):
         # Probe Requests are destined to the radio interface.
         # The rest (auth,(re)assoc,disassoc,deauth are destined to a VAP.
         # for the rest we just don't care.
-        radioap = self.radioap_2GHz if event.port == WLAN_2GHZ_MON_PORT else self.radioap_5GHz
+        radioap = self.radioap_2GHz if event.port == WLAN_2_GHZ_MON_PORT else self.radioap_5GHz
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_PROBE_REQ):
             self.raiseEvent(ProbeRequest(radioap, int(binascii.hexlify(ie.mgmt.src),16), snr, ie.ssid.data))
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and (ie.subtype == dpkt.ieee80211.M_AUTH or
                                                      ie.subtype == dpkt.ieee80211.M_ASSOC_REQ or
                                                      ie.subtype == dpkt.ieee80211.M_REASSOC_REQ or
-                                                     ie.subtype == dpkt.ieee80211.M_DISASSOC_REQ or
-                                                     ie.subtype == dpkt.ieee80211.M_DEAUTHREQ)):
+                                                     ie.subtype == dpkt.ieee80211.M_DISASSOC or
+                                                     ie.subtype == dpkt.ieee80211.M_DEAUTH)):
             src = int(binascii.hexlify(ie.mgmt.src),16)
             vbssid = int(binascii.hexlify(ie.mgmt.bssid),16)
             vap = radioap.get_virtual_ap(vbssid)

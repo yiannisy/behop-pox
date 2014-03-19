@@ -1,24 +1,6 @@
 """
 A WiFi Authenticator.
 """
-
-from pox.core import core
-import pox.openflow.libopenflow_01 as of
-from pox.lib.util import dpid_to_str as mac_to_str
-from pox.lib.util import str_to_bool
-import time
-from pox.lib.recoco import Timer
-from ovsdb_msg import SnrSummary,AggService, AggBot, OvsDBBot
-from pox.forwarding.l2_learning import LearningSwitch
-
-import dpkt, binascii
-from pox.lib.revent import *
-from wifi_helper import *
-
-from dpkt import NeedData
-from pox.lib.addresses import EthAddr
-from behop_config import *
-from wifi_params import *
 from wifi_base import *
 
 import hashlib
@@ -32,7 +14,6 @@ all_stations = {}
 all_aps = {}
 all_vaps = {}
 personal_aps = {}
-phase_out = [True]
 
 class Station(object):
     def __init__(self, addr):
@@ -193,10 +174,9 @@ class WifiAuthenticator(EventMixin):
         '''Statically create a placeholder object for all known Access Points.
         '''
         for ap_dpid in BEHOP_TOPO.keys():
-            phy_ap = PhyAP(None, self.transparent, ap_dpid, self.is_blacklisted(ap_dpid), 
+            all_aps[ap_dpid] = PhyAP(None, self.transparent, ap_dpid, self.is_blacklisted(ap_dpid), 
                            self.whitelisted_stas, authenticator=self)
-            phy_ap.addListeners(self)
-            all_aps[ap_dpid] = phy_ap            
+            all_aps[ap_dpid].addListeners(self)
 
     def load_static_vaps(self):
         '''
@@ -208,15 +188,17 @@ class WifiAuthenticator(EventMixin):
         band_prefix_2GHz = 0x020000000000
         band_prefix_5GHz = 0x060000000000
         ap_prefix = 0x1
-        for phy_ap in sorted(all_aps.values()):
+        for dpid in sorted(all_aps.keys()):
+            phy_ap = all_aps[dpid]
             vbssid_2GHz = band_prefix_2GHz | ap_prefix
             vbssid_5GHz = band_prefix_5GHz | ap_prefix
-            vap_2GHz = VirtualAP(vbssid = vbssid_2GHz, parent_radioap = phy_ap.radioap_2GHz)
-            vap_5GHz = VirtualAP(vbssid = vbssid_5GHz, parent_radioap = phy_ap.radioap_5GHz)
-            all_vaps[vbssid_2GHz] = vap_2GHz
-            all_vaps[vbssid_5GHz] = vap_5GHz
+            all_vaps[vbssid_2GHz] = VirtualAP(vbssid = vbssid_2GHz, parent_radioap = phy_ap.radioap_2GHz)
+            all_vaps[vbssid_5GHz] = VirtualAP(vbssid = vbssid_5GHz, parent_radioap = phy_ap.radioap_5GHz)
+            phy_ap.radioap_2GHz.virtual_aps[vbssid_2GHz] = all_vaps[vbssid_2GHz]
+            phy_ap.radioap_5GHz.virtual_aps[vbssid_5GHz] = all_vaps[vbssid_5GHz]
             ap_prefix = ap_prefix << 1
-            
+
+
     def load_topology(self):
         f = open(TOPOLOGY_FNAME,'r')
 
@@ -395,10 +377,14 @@ class WifiAuthenticator(EventMixin):
     def get_or_create_personal_ap(self, event):
         '''Return the personal AP for this station. If one doesn't exist create it.'''
         if event.src_addr not in all_stations.keys():
+            log.debug("Creating Personal AP for station %012x" % event.src_addr)
             sta = Station(event.src_addr)
+            log.debug("came here")
             all_stations[event.src_addr] = sta
-            personal_ap = PersonalAP(sta)
+            personal_ap = PersonalDefaultBandSteeringAP(sta)
+            log.debug("and came here")
             personal_aps[event.src_addr] = personal_ap
+            log.debug("Here are the personal AP keys : %s" % personal_aps.keys())
         
         return personal_aps[event.src_addr]
 
