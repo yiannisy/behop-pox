@@ -19,7 +19,7 @@ from behop_config import *
 
 
 
-class RadioAP(object):
+class RadioAP():
     '''This is an AP instance running on a physical interface.
     '''
     def __init__(self, channel = None, intf = None, parent_phyap = None):
@@ -71,9 +71,10 @@ class RadioAP(object):
 
     def add_station(self, addr, vbssid, params, aid):
         '''
-        Adds station state to the RadioAP.
+        Adds station state to the RadioAP (raise through WifiAuthenticator).
         '''
-        self.raiseEvent(AddStation(self.parent_phyap.dpid, self.intf, 
+        phyap = self.parent_phyap
+        phyap.authenticator.raiseEvent(AddStation(phyap.dpid, self.intf, 
                                    addr, vbssid, aid, params, 
                                    self.ht_capabilities_info))
 
@@ -260,14 +261,14 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
             # delete radio AP state
             radioap.del_station(self.sta.addr)
             # delete OpenFlow AP entry
-            phy_ap._del_simple_flow(WAN_PORT, mac_dst = self.sta.addr)
+            phy_ap._del_simple_flow(WAN_PORT, mac_dst = EthAddr("%012x" % self.sta.addr))
 
     def send_probe_response(self, event):
         # we have a single VAP installed on this interface, just send it there.
         event.radioap.virtual_aps.values()[0].send_probe_response(self.sta.addr, self.ssid)
 
     def send_auth_response(self, event):
-        event.virtualap.sendAuthResponse(self.sta.addr)
+        event.virtualap.send_auth_response(self.sta.addr)
 
     def install_send_assoc_response(self, event, reassoc=False):
         '''Install this personal AP in the infrastructure.
@@ -280,10 +281,10 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
         phy_ap = radioap.parent_phyap
         authenticator = phy_ap.authenticator
         # Add downlink flow at the AP.
-        phy_ap._set_simple_flow(WAN_PORT,[radioap.wlan_port],mac_dst = self.sta.addr, priority=2)
+        phy_ap._set_simple_flow(WAN_PORT,[radioap.wlan_port],mac_dst = EthAddr("%012x" % self.sta.addr), priority=2)
         # Add station state to the Radio AP.
-        radioap.add_station(self.sta.addr, self.virtualap.vbssid, self.sta.aid,
-                             self.sta.params)
+        radioap.add_station(self.sta.addr, self.virtualap.vbssid,
+                            self.sta.params, self.sta.aid)
         phy_ap.authenticator.set_station_flow(self.sta.addr, phy_ap.dpid)
         if reassoc == False:
             self.virtualap.send_assoc_response(self.sta.addr, self.sta.params, self.sta.aid)
@@ -321,8 +322,14 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
         # Just do an SSID-checking for the default WiFi case.
         # Also make sure it comes at the 5GHz band
         return (((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None)) and 
-                (event.radioap.is_band_2GHz() == False))
+                (event.radioap.is_band_2GHZ() == False))
     
+    def is_valid_auth_request(self, event, sta):
+        return True
+
+    def is_valid_assoc_request(self, event, sta):
+        return True
+
     def is_valid_disassoc_request(self, event, sta):
         '''
         Checks if a sniffed disassoc request is for us. We accept at the first AP it came from.
@@ -346,12 +353,6 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
         else:
             log.error("Station with unexpected capabilities : %x (capab:%04x ht_capab:%04x)" % (self.sta.addr, event.params.capabilities, event.params.ht_capabilities['ht_capab_info']))
             return False
-
-
-
-
-
-
 
 class VirtualAP(object):
     '''This is a VirtualAP instance.
@@ -378,7 +379,7 @@ class VirtualAP(object):
 
     def send_auth_response(self, src_addr):
         log.debug("Sending Auth Response to %x" % src_addr)
-        packet_str = generate_auth_response(self.vbssid, src_addr, self.parent_ap.current_channel)
+        packet_str = generate_auth_response(self.vbssid, src_addr, self.parent_radioap.current_channel)
         self.send_packet_out(packet_str)
 
     def send_assoc_response(self, src_addr, params, sta_aid):
@@ -418,6 +419,7 @@ class PhyAP(EventMixin):
         self.clients = []
         self.mon_ports = [WLAN_2_GHZ_MON_PORT, WLAN_5_GHZ_MON_PORT]
         self.phase_out = phase_out
+        self.authenticator = authenticator
         
         if self.connection:
             self.listeners = connection.addListeners(self)
@@ -429,15 +431,15 @@ class PhyAP(EventMixin):
             # This assumes that the connection is direct and there is no NAT/FlowVisor in between, as 
             # we detect the AP's address through the OF connection.
             # Monitor port goes directly to the controller...        
-            self._set_simple_flow(self.radioap_2GHz.wlan_port ,WAN_PORT)
-            self._set_simple_flow(self.radioap_5GHz.wlan_port ,WAN_PORT)
+            self._set_simple_flow(self.radioap_2GHz.wlan_port ,[WAN_PORT])
+            self._set_simple_flow(self.radioap_5GHz.wlan_port ,[WAN_PORT])
             self._set_simple_flow(WAN_PORT, [self.radioap_2GHz.wlan_port, self.radio5GHz.wlan_port], 
                                   mac_dst=EthAddr("ffffffffffff"), priority=2)
-            self._set_simple_flow(WAN_PORT,of.OFPP_NORMAL,priority=3,ip_dst=connection.sock.getpeername()[0])
-            self._set_simple_flow(of.OFPP_LOCAL,WAN_PORT, priority=3,ip_src=connection.sock.getpeername()[0])
+            self._set_simple_flow(WAN_PORT,[of.OFPP_NORMAL],priority=3,ip_dst=connection.sock.getpeername()[0])
+            self._set_simple_flow(of.OFPP_LOCAL,[WAN_PORT], priority=3,ip_src=connection.sock.getpeername()[0])
             # Allow arp packets with the AP's local IP address as destination.
-            self._set_simple_flow(WAN_PORT, of.OFPP_NORMAL,priority=3,dl_type=0x0806,ip_dst=connection.sock.getpeername()[0],nw_proto = 1)
-            self._set_simple_flow(of.OFPP_LOCAL, WAN_PORT,priority=3,dl_type=0x0806,ip_src=connection.sock.getpeername()[0],nw_proto = 2)
+            self._set_simple_flow(WAN_PORT, [of.OFPP_NORMAL],priority=3,dl_type=0x0806,ip_dst=connection.sock.getpeername()[0],nw_proto = 1)
+            self._set_simple_flow(of.OFPP_LOCAL, [WAN_PORT],priority=3,dl_type=0x0806,ip_src=connection.sock.getpeername()[0],nw_proto = 2)
 
             # send a few more bytes in to capture all WiFi Header.
             self.connection.send(of.ofp_set_config(miss_send_len=1024))        
@@ -578,7 +580,7 @@ class PhyAP(EventMixin):
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_AUTH):
             # Auth requests are destined to a virtual-ap interface.
-            self.raiseEvent(AuthRequest(vap, src, vbssid,16), snr)
+            self.raiseEvent(AuthRequest(vap, src, vbssid, snr))
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_ASSOC_REQ):
             params = WifiStaParams(packet.raw[rd_len:])
@@ -597,28 +599,28 @@ class PhyAP(EventMixin):
 
     def log_blacklisted_sta_packet(self, ie, event):
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_AUTH):
-            log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (AuthReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
+            log.debug("%012x : UNHANDLED -> UNHANDLED (AuthReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
                           (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
                            int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_ASSOC_REQ):
-            log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (AssocReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
+            log.debug("%012x : UNHANDLED -> UNHANDLED (AssocReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
                           (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
                            int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_REASSOC_REQ):
-            log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (ReAssocReq,dst:%012x,dpid:%012x,bssid:%012x)" % 
+            log.debug("%012x : UNHANDLED -> UNHANDLED (ReAssocReq,dst:%012x,dpid:%012x,bssid:%012x)" % 
                           (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
                            int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))
             
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DISASSOC):
-            log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (DisAssocReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
+            log.debug("%012x : UNHANDLED -> UNHANDLED (DisAssocReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
                           (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
                            int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))
             log.debug("Disassoc with status code %x" % ie.diassoc.reason)
 
         if (ie.type == dpkt.ieee80211.MGMT_TYPE and ie.subtype == dpkt.ieee80211.M_DEAUTH):
-            log_fsm.debug("%012x : UNHANDLED -> UNHANDLED (DeauthReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
+            log.debug("%012x : UNHANDLED -> UNHANDLED (DeauthReq,dst:%012x,bssid:%012x,dpid:%012x)" % 
                           (int(binascii.hexlify(ie.mgmt.src),16),int(binascii.hexlify(ie.mgmt.dst),16),
                            int(binascii.hexlify(ie.mgmt.bssid),16),event.dpid))        
             log.debug("Deauth with status code %x" % ie.deauth.reason)

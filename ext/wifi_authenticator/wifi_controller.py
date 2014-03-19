@@ -46,7 +46,6 @@ class BackhaulSwitch(EventMixin):
         else:
             self._setup_studio5_switch()
 
-
     def _handle_FlowRemoved(self, event):
         '''
         Flow has expired at the switch - forward event to the main brain
@@ -60,7 +59,6 @@ class BackhaulSwitch(EventMixin):
             bytes = event.ofp.byte_count
             dur = event.ofp.duration_sec
             self.raiseEvent(HostTimeout(event.dpid, addr, packets, bytes, dur))
-        
 
     def _setup_studio5_switch(self):
         # all ports should go to the uplinks to start with (split mgmt and data traffic).
