@@ -316,6 +316,7 @@ class WifiAuthenticator(EventMixin):
         if event.src_addr not in all_stations.keys():
             log.debug("Creating Personal AP for station %012x" % event.src_addr)
             sta = Station(event.src_addr)
+            sta.aid = self.get_next_aid()
             log.debug("came here")
             all_stations[event.src_addr] = sta
             personal_ap = PersonalDefaultBandSteeringAP(sta)
