@@ -111,6 +111,9 @@ class OvsDBBot(ChannelBot, EventMixin):
                 self.send_ovsdb_msg(dpid,DEL_VBEACON)
                 log.debug("Removing existing stations")
                 self.send_ovsdb_msg(dpid, DEL_STATION)
+                log.debug("Resetting bssidmask")
+                self._handle_UpdateBssidmask(UpdateBssidmask(dpid, "wlan0",0xffffffffffff))
+                self._handle_UpdateBssidmask(UpdateBssidmask(dpid, "wlan1",0xffffffffffff))                
                 for radioap in [phyap.radioap_2GHz, phyap.radioap_5GHz]:                    
                     log.debug("VAPs for %s (%012x) : %s" % (radioap.intf,phyap.dpid,radioap.virtual_aps.keys()))
                     for vbssid in radioap.virtual_aps.keys():
@@ -225,7 +228,7 @@ class OvsDBBot(ChannelBot, EventMixin):
         _bssidmask = "%012x" % event.bssidmask
         upd_json["params"][1]["row"]["bssidmask"] = _bssidmask
         #upd_json["params"][1]["row"]["intf"] = event.intf
-        upd_json["params"][1]["where"] == [["intf","==",event.intf]]
+        upd_json["params"][1]["where"] = [["intf","==",event.intf]]
         log.debug("Updating BSSIDMASK for AP %x : %x" % (event.dpid, event.bssidmask))
         if self.connections.has_key(event.dpid):
             self.send_ovsdb_msg(event.dpid,upd_json)

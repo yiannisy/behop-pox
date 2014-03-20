@@ -82,7 +82,8 @@ class RadioAP():
         '''
         Remove the station state from the RadioAP.
         '''
-        self.raiseEvent(RemoveStation(self.parent_phyap.dpid, self.intf, addr))
+        phyap = self.parent_phyap
+        phyap.authenticator.raiseEvent(RemoveStation(phyap.dpid, self.intf, addr))
 
 class DefaultWiFiFSM(FSM):
     def __init__(self):
@@ -103,11 +104,11 @@ class DefaultWiFiFSM(FSM):
         self.add_transition('ASSOC','AuthReq',self.send_auth_response,'ASSOC')
         self.add_transition('ASSOC','AssocReq',self.reinstall_send_assoc_response,'ASSOC')
         self.add_transition('ASSOC','ReassocReq',self.reinstall_send_reassoc_response,'ASSOC')        
-        self.add_transition('ASSOC','DisassocReq',self.uninstall, 'NONE')
-        self.add_transition('AUTH','DisassocReq',self.uninstall, 'NONE')
-        self.add_transition('ASSOC','DeauthReq',self.uninstall, 'NONE')        
-        self.add_transition('AUTH','DeauthReq',self.uninstall, 'NONE')        
-        self.add_transition('ASSOC','HostTimeout',self.uninstall, 'NONE')
+        self.add_transition('ASSOC','DisassocReq',self.uninstall, 'SNIFF')
+        self.add_transition('AUTH','DisassocReq',self.uninstall, 'SNIFF')
+        self.add_transition('ASSOC','DeauthReq',self.uninstall, 'SNIFF')        
+        self.add_transition('AUTH','DeauthReq',self.uninstall, 'SNIFF')        
+        self.add_transition('ASSOC','HostTimeout',self.uninstall, 'SNIFF')
 
     def send_probe_response(self, *args):        
         pass
@@ -230,8 +231,9 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
 
     def handle_disassoc_request(self, event):
         if self.is_valid_disassoc_request(event, self.sta):
-            old_state = sta.state
-            new_state = self.processFSM(self.sta.state, 'DisassocReq', self.sta)
+            old_state = self.sta.state
+            new_state = self.processFSM(self.sta.state, 'DisassocReq', event)
+            self.sta.state = new_state
             log_fsm.debug("%012x : %s -> %s (DisassocReq, dpid:%012x,reason:%x)" %
                           (event.src_addr, old_state, new_state, event.virtualap.get_dpid(), event.reason))
         else:
@@ -240,18 +242,21 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
     def handle_deauth_request(self, event):
         if self.is_valid_deauth_request(event, self.sta):
             old_state = self.sta.state
-            new_state = self.processFSM(self.sta.state, 'DeauthReq', self.sta)
+            new_state = self.processFSM(self.sta.state, 'DeauthReq', event)
+            self.sta.state = new_state
             log_fsm.debug("%012x : %s -> %s (DeauthReq, dpid:%012x,reason:%x)" %
                           (event.src_addr, old_state, new_state, event.virtualap.get_dpid(), event.reason))
         else:
             log.warning("invalid deauth request from %x" % event.src_addr)
 
     def handle_host_timeout(self, event):
+        new_state = self.processFSM(self.sta.state, 'HostTimeout', event)
+        self.sta.state = new_state
         log_fsm.debug("%012x : %s -> NONE (HostTimeout, dpid:%012x, packets:%d, bytes:%d,secs:%d)" % 
                       (self.sta.addr, self.sta.state, phy_ap.dpid, event.packets, event.bytes,event.dur))
-        self.uninstall()
+        self.uninstall(event)
 
-    def uninstall(self):
+    def uninstall(self, event):
         if (self.virtualap):
             radioap = self.virtualap.parent_radioap
             phy_ap = radioap.parent_phyap
@@ -262,6 +267,7 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
             radioap.del_station(self.sta.addr)
             # delete OpenFlow AP entry
             phy_ap._del_simple_flow(WAN_PORT, mac_dst = EthAddr("%012x" % self.sta.addr))
+            self.virtualap = None
 
     def send_probe_response(self, event):
         # we have a single VAP installed on this interface, just send it there.
@@ -306,14 +312,14 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
             # delete radio AP state
             radioap.del_station(self.sta.addr)
             # delete OpenFlow AP entry
-            phy_ap._del_simple_flow(WAN_PORT, mac_dst = self.sta.addr)
+            phy_ap._del_simple_flow(WAN_PORT, mac_dst = EthAddr("%012x" % self.sta.addr))
         self.install_send_assoc_response(event, reassoc=reassoc)
 
     def install_send_reassoc_response(self, event):
         self.install_send_assoc_response(event, reassoc=True)
 
     def reinstall_send_reassoc_response(self, event):
-        self.reinstall_send_assoc_response(reassoc=True)
+        self.reinstall_send_assoc_response(event, reassoc=True)
 
     def is_valid_probe_request(self, event):
         '''
@@ -371,26 +377,26 @@ class VirtualAP(object):
             return None
 
     def send_probe_response(self, src_addr, ssid):
-        log.debug("Sending Probe Response to %x" % src_addr)
+        log.debug("Sending Probe Response to %012x (VAP: %012x, DPID: %012x)" % (src_addr, self.vbssid, self.get_dpid()))
         pkt_str = generate_probe_response(self.vbssid, ssid, src_addr, self.parent_radioap.current_channel, 
                                           self.parent_radioap.capabilities, 
                                           self.parent_radioap.ht_capabilities_info)
         self.send_packet_out(pkt_str)
 
     def send_auth_response(self, src_addr):
-        log.debug("Sending Auth Response to %x" % src_addr)
+        log.debug("Sending Auth Response to %012x (VAP: %012x, DPID: %012x" % (src_addr,self.vbssid, self.get_dpid()))
         packet_str = generate_auth_response(self.vbssid, src_addr, self.parent_radioap.current_channel)
         self.send_packet_out(packet_str)
 
     def send_assoc_response(self, src_addr, params, sta_aid):
-        log.debug("Sending Assoc Response to %x" % src_addr)
+        log.debug("Sending Assoc Response to %012x (VAP: %012x, DPID: %012x)" % (src_addr, self.vbssid, self.get_dpid()))
         packet_str = generate_assoc_response(self.vbssid, src_addr, params, self.parent_radioap.current_channel,
                                              self.parent_radioap.capabilities, 
                                              self.parent_radioap.ht_capabilities_info,sta_aid)
         self.send_packet_out(packet_str)
 
     def send_reassoc_response(self, src_addr, params, sta_aid):
-        log.debug("Sending ReAssoc Response to %x" % src_addr)
+        log.debug("Sending ReAssoc Response to %012x (VAP: %012x, DPID: %012x)" % (src_addr, self.vbssid, self.get_dpid()))
         packet_str = generate_assoc_response(self.vbssid, src_addr, params, self.parent_radioap.current_channel,
                                              self.parent_radioap.capabilities, 
                                              self.parent_radioap.ht_capabilities_info,sta_aid, reassoc=True)
