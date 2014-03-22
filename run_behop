@@ -1,0 +1,5 @@
+of_port=$1
+ovsdb_port=$2
+wifimode=$3
+
+./pox.py --verbose log --format="%(asctime)s|%(name)s:%(levelname)s| %(message)s" openflow.of_01 --port=${of_port} messenger messenger.tcp_transport --tcp_port=${ovsdb_port} ext.wifi_authenticator.wifi_controller --wifimode=${wifimode} wifi_authenticator.ovsdb_msg py 2>> pox.log
