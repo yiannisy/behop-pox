@@ -181,7 +181,8 @@ class PersonalAP(EventMixin, DefaultWiFiFSM):
         pass
 
 class PersonalDefaultWiFiAP(PersonalAP):
-    '''Personal AP that supports client-driven association only at 5GHz.
+    '''
+    Personal AP that supports client-driven association in both channels.
     '''
     def __init__(self, station):
         PersonalAP.__init__(self, station)
