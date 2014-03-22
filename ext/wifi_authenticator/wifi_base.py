@@ -180,7 +180,7 @@ class PersonalAP(EventMixin, DefaultWiFiFSM):
     def handle_deauth_request(self, event):
         pass
 
-class PersonalDefaultBandSteeringAP(PersonalAP):
+class PersonalDefaultWiFiAP(PersonalAP):
     '''Personal AP that supports client-driven association only at 5GHz.
     '''
     def __init__(self, station):
@@ -327,8 +327,7 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
         '''
         # Just do an SSID-checking for the default WiFi case.
         # Also make sure it comes at the 5GHz band
-        return (((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None)) and 
-                (event.radioap.is_band_2GHZ() == False))
+        return (((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None)))
     
     def is_valid_auth_request(self, event, sta):
         return True
@@ -359,6 +358,32 @@ class PersonalDefaultBandSteeringAP(PersonalAP):
         else:
             log.error("Station with unexpected capabilities : %x (capab:%04x ht_capab:%04x)" % (self.sta.addr, event.params.capabilities, event.params.ht_capabilities['ht_capab_info']))
             return False
+
+class PersonalDefaultWiFi5GHz(PersonalDefaultWiFiAP):
+    '''
+    Similar with the default WiFi case, but reply only to 5GHz probes.
+    '''
+    def is_valid_probe_request(self, event):
+        '''
+        Checks if a sniffed probe request is for us.
+        '''
+        # Just do an SSID-checking for the default WiFi case.
+        # Also make sure it comes at the 5GHz band
+        return (((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None)) and 
+                (event.radioap.is_band_2GHZ() == False))
+
+class PersonalDefaultWiFi2GHz(PersonalDefaultWiFiAP):
+    '''
+    Similar with the default WiFi case, but reply only to 5GHz probes.
+    '''
+    def is_valid_probe_request(self, event):
+        '''
+        Checks if a sniffed probe request is for us.
+        '''
+        # Just do an SSID-checking for the default WiFi case.
+        # Also make sure it comes at the 5GHz band
+        return (((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None)) and 
+                (event.radioap.is_band_2GHZ() == True))
 
 class VirtualAP(object):
     '''This is a VirtualAP instance.
