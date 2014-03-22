@@ -143,7 +143,7 @@ class WifiAuthenticator(EventMixin):
     '''
     _eventMixin_events = set([AddStation, RemoveStation, MoveStation, UpdateBssidmask, SnrSummary,AddVBeacon,DelVBeacon])
 
-    def __init__(self, transparent):
+    def __init__(self, transparent, wifimode):
         '''
         Setup vbssid map and placeholders for APs and stations.
         '''
@@ -154,6 +154,7 @@ class WifiAuthenticator(EventMixin):
         self.all_aps = all_aps
         self.all_stations = all_stations
         self.transparent = transparent
+        self.wifimode = wifimode
         self.bh_switch = None
         self.timer = None
         self.bw_timer = None
@@ -317,7 +318,16 @@ class WifiAuthenticator(EventMixin):
             sta.aid = self.get_next_aid()
             log.debug("came here")
             all_stations[event.src_addr] = sta
-            personal_ap = PersonalDefaultBandSteeringAP(sta)
+            if self.wifimode == "defaultap":
+                personal_ap = PersonalDefaultWiFiAP(sta)
+            elif self.wifimode == "5g":
+                personal_ap = PersonalDefaultWiFi5GHz(sta)
+            elif self.wifimode == "2g":
+                personal_ap = PersonalDefaultWiFi2GHz(sta)
+            else:
+                log.error("Unknown WiFi Mode for AP : %s" % self.wifimode)
+                return
+
             log.debug("and came here")
             personal_aps[event.src_addr] = personal_ap
             log.debug("Here are the personal AP keys : %s" % personal_aps.keys())
@@ -386,10 +396,10 @@ def list_personal_aps():
         print "%d %012x" % (idx, ap.sta.addr)
         idx += 1
 
-def launch( transparent=False):
+def launch(transparent=False, wifimode="defaultap"):
     core.Interactive.variables['behop_stations'] = all_stations
     core.Interactive.variables['behop_aps'] = all_aps
     core.Interactive.variables['behop_phase_out'] = phase_out
     core.Interactive.variables['list_stations'] = list_stations
     core.Interactive.variables['list_personal_aps'] = list_personal_aps
-    core.registerNew(WifiAuthenticator, str_to_bool(transparent))
+    core.registerNew(WifiAuthenticator, str_to_bool(transparent), wifimode)
