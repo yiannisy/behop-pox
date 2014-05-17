@@ -100,6 +100,8 @@ class BackhaulSwitch(EventMixin):
         # add flow for broadcast
         self._set_simple_flow(BACKHAUL_MGMT_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
         self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo_values(), mac_dst=EthAddr("01005E0000FB"), priority=2)
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo_values(), mac_dst=EthAddr("3333000000FB"), priority=2)
         self._set_simple_flow(BACKHAUL_MGMT_UPLINK, [], priority=1)
         self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], priority=1)
 
@@ -119,6 +121,8 @@ class BackhaulSwitch(EventMixin):
                 
         # add flow for broadcast
         self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo_values(), mac_dst=EthAddr("01005E0000FB"), priority=2)
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo_values(), mac_dst=EthAddr("3333000000FB"), priority=2)
         self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], priority=1)
 
 
