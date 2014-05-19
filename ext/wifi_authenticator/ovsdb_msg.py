@@ -16,6 +16,8 @@ GET_DPID = {"method":"transact", "params":["Open_vSwitch", {"op":"select","table
                                                             "where":[],"columns":["datapath_id"]}], "id":1}
 ADD_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiSta","row":{"addr":None,"vbssid":None,"intf":None,"ht_capa":None,"sup_rates":["set",[]]}}],"id":1}
 DEL_STATION = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiSta","where":[]}],"id":2}
+DEL_STATION_2GHZ = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiSta","where":[["intf","==","wlan0"]]}],"id":2}
+DEL_STATION_5GHZ = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiSta","where":[["intf","==","wlan1"]]}],"id":2}
 UPDATE_BSSIDMASK = {"method":"transact", "params":["Wifi_vSwitch",{"op":"update","table":"WifiConfig","where":[],"row":{"bssidmask":None}}],"id":3}
 ADD_VBEACON = {"method":"transact","params":["Wifi_vSwitch",{"op":"insert","table":"WifiBeacon","row":{"vbssid":None,"intf":None,}}],"id":4}
 DEL_VBEACON = {"method":"transact","params":["Wifi_vSwitch",{"op":"delete","table":"WifiBeacon","where":[]}],"id":5}
@@ -110,7 +112,8 @@ class OvsDBBot(ChannelBot, EventMixin):
                 log.debug("Deleting all existing beacons")
                 self.send_ovsdb_msg(dpid,DEL_VBEACON)
                 log.debug("Removing existing stations")
-                self.send_ovsdb_msg(dpid, DEL_STATION)
+                self.send_ovsdb_msg(dpid, DEL_STATION_2GHZ)
+                self.send_ovsdb_msg(dpid, DEL_STATION_5GHZ)
                 log.debug("Resetting bssidmask")
                 self._handle_UpdateBssidmask(UpdateBssidmask(dpid, "wlan0",0xffffffffffff))
                 self._handle_UpdateBssidmask(UpdateBssidmask(dpid, "wlan1",0xffffffffffff))                
