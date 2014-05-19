@@ -327,7 +327,6 @@ class PersonalDefaultWiFiAP(PersonalAP):
         Checks if a sniffed probe request is for us.
         '''
         # Just do an SSID-checking for the default WiFi case.
-        # Also make sure it comes at the 5GHz band
         return (((event.ssid == SERVING_SSID) or (event.ssid == '') or (event.ssid == None)))
     
     def is_valid_auth_request(self, event, sta):
@@ -467,6 +466,11 @@ class PhyAP(EventMixin):
             self._set_simple_flow(self.radioap_5GHz.wlan_port ,[WAN_PORT])
             self._set_simple_flow(WAN_PORT, [self.radioap_2GHz.wlan_port, self.radio5GHz.wlan_port], 
                                   mac_dst=EthAddr("ffffffffffff"), priority=2)
+            self._set_simple_flow(WAN_PORT, [self.radioap_2GHz.wlan_port, self.radio5GHz.wlan_port], 
+                                  mac_dst=EthAddr("01005E0000fb"), priority=2)
+            self._set_simple_flow(WAN_PORT, [self.radioap_2GHz.wlan_port, self.radio5GHz.wlan_port], 
+                                  mac_dst=EthAddr("3333000000fb"), priority=2)
+
             self._set_simple_flow(WAN_PORT,[of.OFPP_NORMAL],priority=3,ip_dst=connection.sock.getpeername()[0])
             self._set_simple_flow(of.OFPP_LOCAL,[WAN_PORT], priority=3,ip_src=connection.sock.getpeername()[0])
             # Allow arp packets with the AP's local IP address as destination.
