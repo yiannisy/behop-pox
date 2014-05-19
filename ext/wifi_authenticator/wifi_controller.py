@@ -81,6 +81,8 @@ class BackhaulSwitch(EventMixin):
         # add flow for broadcast
         self._set_simple_flow(BACKHAUL_MGMT_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
         self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("01005E0000FB"), priority=2)
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("3333000000FB"), priority=2)
         self._set_simple_flow(BACKHAUL_MGMT_UPLINK, [], priority=1)
         self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], priority=1)
 
@@ -100,6 +102,8 @@ class BackhaulSwitch(EventMixin):
                 
         # add flow for broadcast
         self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("ffffffffffff"), priority=2)
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("01005E0000FB"), priority=2)
+        self._set_simple_flow(BACKHAUL_DATA_UPLINK, self.topo.values(), mac_dst=EthAddr("3333000000FB"), priority=2)
         self._set_simple_flow(BACKHAUL_DATA_UPLINK, [], priority=1)
 
     def _set_simple_flow(self,port_in, ports_out, priority=1,mac_src=None,mac_dst=None, ip_src=None, ip_dst=None,queue_id=None, dl_type=0x0800,idle_timeout=0):
@@ -197,6 +201,27 @@ class WifiAuthenticator(EventMixin):
             phy_ap.radioap_2GHz.virtual_aps[vbssid_2GHz] = all_vaps[vbssid_2GHz]
             phy_ap.radioap_5GHz.virtual_aps[vbssid_5GHz] = all_vaps[vbssid_5GHz]
             ap_prefix = ap_prefix << 1
+
+    def load_broadcast_stas(self, num = 1):
+        '''
+        Add VAPs and stations to stress-test the broadcast scenario.
+        '''
+        vbssid_2GHz = 0x020000000001
+        vbssid_5GHz = 0x060000000001
+        aid = 1
+        addr_2GHz = 0x020000000001
+        for dpid in sorted(all_aps.keys()):
+            for i in range(0,num):
+                phy_ap = all_aps[dpid]
+                phy_ap.radioap_2GHz.add_station(addr_2GHz,vbssid_2GHz,
+                                                WifiStaParamsSample(addr = addr_2GHz,
+                                                                    supp_rates = WLAN_2_GHZ_SUPP_RATES,
+                                                                    listen_interval=100,
+                                                                    capabilities=0x401,
+                                                                    ht_capabilities = None),
+                                                aid)
+                aid += 1
+                addr_2GHz += 1
 
 
     def load_topology(self):
@@ -396,10 +421,14 @@ def list_personal_aps():
         print "%d %012x" % (idx, ap.sta.addr)
         idx += 1
 
+def load_broadcast_stas(num=1):
+    core.WifiAuthenticator.load_broadcast_stas(num)
+
 def launch(transparent=False, wifimode="defaultap"):
     core.Interactive.variables['behop_stations'] = all_stations
     core.Interactive.variables['behop_aps'] = all_aps
     core.Interactive.variables['behop_phase_out'] = phase_out
     core.Interactive.variables['list_stations'] = list_stations
     core.Interactive.variables['list_personal_aps'] = list_personal_aps
+    core.Interactive.variables['load_broadcast_stas'] = load_broadcast_stas
     core.registerNew(WifiAuthenticator, str_to_bool(transparent), wifimode)
