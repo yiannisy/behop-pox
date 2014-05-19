@@ -507,6 +507,16 @@ class WifiStaParams(object):
                                                 self.ext_rates, self.listen_interval, self.capabilities,
                                                 self.ht_capabilities)
                                                                                                  
+class WifiStaParamsSample(object):
+    def __init__(self, addr=None, supp_rates=None, listen_interval=None,capabilities=None,
+                 vendor_specific=None, ext_rates=None, ht_capabilities=None):
+        self.addr = addr
+        self.supp_rates = supp_rates
+        self.listen_interval = listen_interval
+        self.capabilities = capabilities
+        self.ext_rates = None
+        self.ht_capabilities = ht_capabilities
+
 
 class UnknownTransitionError(Exception):
     pass
