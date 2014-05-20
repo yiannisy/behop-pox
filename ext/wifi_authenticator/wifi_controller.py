@@ -172,7 +172,11 @@ class WifiAuthenticator(EventMixin):
         if USE_WHITELIST == 1:
             self.whitelisted_stas = self.load_whitelisted_stas()
         self.load_phy_aps()
-        self.load_static_vaps()
+        if self.wifimode == "broadcast":
+            self.load_broadcast_vaps()
+            pass
+        else:
+            self.load_static_vaps()
         
     def load_phy_aps(self):
         '''Statically create a placeholder object for all known Access Points.
@@ -182,7 +186,28 @@ class WifiAuthenticator(EventMixin):
                            self.whitelisted_stas, authenticator=self, phase_out = phase_out)
             all_aps[ap_dpid].addListeners(self)
 
-    def load_static_vaps(self):
+    def load_broadcast_vaps(self, vaps_per_ap = VAPS_PER_AP):
+        '''
+        VAPs to stress-test broadcast overhead
+        '''
+        band_prefix_2GHz = 0x020000000000
+        band_prefix_5GHz = 0x060000000000
+        ap_prefix = 0x1
+        for dpid in sorted(all_aps.keys()):
+            if BCAST_SILENT_APS and dpid in BCAST_SILENT_APS:
+                continue
+            for i in range(0, vaps_per_ap):
+                phy_ap = all_aps[dpid]
+                vbssid_2GHz = band_prefix_2GHz | ap_prefix
+                vbssid_5GHz = band_prefix_5GHz | ap_prefix
+                all_vaps[vbssid_2GHz] = VirtualAP(vbssid = vbssid_2GHz, parent_radioap = phy_ap.radioap_2GHz)
+                all_vaps[vbssid_5GHz] = VirtualAP(vbssid = vbssid_5GHz, parent_radioap = phy_ap.radioap_5GHz)
+                phy_ap.radioap_2GHz.virtual_aps[vbssid_2GHz] = all_vaps[vbssid_2GHz]
+                phy_ap.radioap_5GHz.virtual_aps[vbssid_5GHz] = all_vaps[vbssid_5GHz]
+                ap_prefix = ap_prefix << 1
+
+
+    def load_static_vaps(self, vaps_per_ap = VAPS_PER_AP):
         '''
         Static VAP allocation---one per RadioAP.
         We don't care about bssidmask bitmap collission when 
@@ -193,16 +218,17 @@ class WifiAuthenticator(EventMixin):
         band_prefix_5GHz = 0x060000000000
         ap_prefix = 0x1
         for dpid in sorted(all_aps.keys()):
-            phy_ap = all_aps[dpid]
-            vbssid_2GHz = band_prefix_2GHz | ap_prefix
-            vbssid_5GHz = band_prefix_5GHz | ap_prefix
-            all_vaps[vbssid_2GHz] = VirtualAP(vbssid = vbssid_2GHz, parent_radioap = phy_ap.radioap_2GHz)
-            all_vaps[vbssid_5GHz] = VirtualAP(vbssid = vbssid_5GHz, parent_radioap = phy_ap.radioap_5GHz)
-            phy_ap.radioap_2GHz.virtual_aps[vbssid_2GHz] = all_vaps[vbssid_2GHz]
-            phy_ap.radioap_5GHz.virtual_aps[vbssid_5GHz] = all_vaps[vbssid_5GHz]
-            ap_prefix = ap_prefix << 1
+            for i in range(0, vaps_per_ap):
+                phy_ap = all_aps[dpid]
+                vbssid_2GHz = band_prefix_2GHz | ap_prefix
+                vbssid_5GHz = band_prefix_5GHz | ap_prefix
+                all_vaps[vbssid_2GHz] = VirtualAP(vbssid = vbssid_2GHz, parent_radioap = phy_ap.radioap_2GHz)
+                all_vaps[vbssid_5GHz] = VirtualAP(vbssid = vbssid_5GHz, parent_radioap = phy_ap.radioap_5GHz)
+                phy_ap.radioap_2GHz.virtual_aps[vbssid_2GHz] = all_vaps[vbssid_2GHz]
+                phy_ap.radioap_5GHz.virtual_aps[vbssid_5GHz] = all_vaps[vbssid_5GHz]
+                ap_prefix = ap_prefix << 1
 
-    def load_broadcast_stas(self, num = 1):
+    def load_broadcast_stas(self, stas_per_ap = STAS_PER_AP):
         '''
         Add VAPs and stations to stress-test the broadcast scenario.
         '''
@@ -211,7 +237,7 @@ class WifiAuthenticator(EventMixin):
         aid = 1
         addr_2GHz = 0x020000000001
         for dpid in sorted(all_aps.keys()):
-            for i in range(0,num):
+            for i in range(0,stas_per_ap):
                 phy_ap = all_aps[dpid]
                 phy_ap.radioap_2GHz.add_station(addr_2GHz,vbssid_2GHz,
                                                 WifiStaParamsSample(addr = addr_2GHz,
@@ -421,8 +447,12 @@ def list_personal_aps():
         print "%d %012x" % (idx, ap.sta.addr)
         idx += 1
 
-def load_broadcast_stas(num=1):
-    core.WifiAuthenticator.load_broadcast_stas(num)
+def load_broadcast_stas(stas_per_ap=STAS_PER_AP):
+    core.WifiAuthenticator.load_broadcast_stas(stas_per_ap)
+
+def load_static_vaps(vaps_per_ap= VAPS_PER_AP):
+    core.WifiAuthenticator.load_static_vaps(vaps_per_ap)
+
 
 def launch(transparent=False, wifimode="defaultap"):
     core.Interactive.variables['behop_stations'] = all_stations
@@ -431,4 +461,5 @@ def launch(transparent=False, wifimode="defaultap"):
     core.Interactive.variables['list_stations'] = list_stations
     core.Interactive.variables['list_personal_aps'] = list_personal_aps
     core.Interactive.variables['load_broadcast_stas'] = load_broadcast_stas
+    core.Interactive.variables['load_static_vaps'] = load_static_vaps
     core.registerNew(WifiAuthenticator, str_to_bool(transparent), wifimode)
